@@ -1,0 +1,189 @@
+import { prisma } from "@/lib/prisma";
+import { createAccount, updateAccount, toggleAccountActive } from "@/lib/actions/accounts";
+
+const errorMessages: Record<string, string> = {
+  invalid_email: "メールアドレスの形式が正しくありません",
+  invalid_name: "表示名を入力してください",
+  weak_password: "パスワードは8文字以上にしてください",
+  duplicate_email: "このメールアドレスは既に登録されています",
+  last_admin: "最後の有効な管理者を無効化・降格することはできません",
+  not_found: "対象のアカウントが見つかりません",
+};
+
+const okMessages: Record<string, string> = {
+  created: "アカウントを作成しました",
+  updated: "アカウントを更新しました",
+};
+
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; ok?: string }>;
+}) {
+  const params = await searchParams;
+  const errorMessage = params.error ? errorMessages[params.error] : null;
+  const okMessage = params.ok ? okMessages[params.ok] : null;
+
+  const [users, departments] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { email: "asc" },
+      include: { departmentLinks: { where: { isActive: true }, include: { department: true } } },
+    }),
+    prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+  ]);
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="mb-4 text-base font-medium text-zinc-900 dark:text-zinc-50">
+          アカウント管理
+        </h1>
+        {errorMessage && (
+          <p className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
+            {errorMessage}
+          </p>
+        )}
+        {okMessage && (
+          <p className="mb-4 rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-400">
+            {okMessage}
+          </p>
+        )}
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          表示名は保存時に文字列内のすべての空白（全角・半角）が自動的に除去されます。部署は複数選択でき、兼任している作業者に対応します。
+        </p>
+        <form
+          action={createAccount}
+          className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">メールアドレス</label>
+            <input
+              name="email"
+              type="email"
+              required
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">表示名</label>
+            <input
+              name="displayName"
+              required
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">初期パスワード（8文字以上）</label>
+            <input
+              name="password"
+              type="text"
+              required
+              minLength={8}
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">権限</label>
+            <select
+              name="role"
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            >
+              <option value="STAFF">一般</option>
+              <option value="ADMIN">管理者</option>
+            </select>
+          </div>
+          <fieldset className="flex flex-wrap gap-3">
+            <legend className="mb-1 block text-xs text-zinc-500">所属部署</legend>
+            {departments.map((d) => (
+              <label key={d.id} className="flex items-center gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+                <input type="checkbox" name="departmentIds" value={d.id} />
+                {d.name}
+              </label>
+            ))}
+          </fieldset>
+          <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
+            追加
+          </button>
+        </form>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
+              <th className="px-4 py-2 font-medium">メールアドレス</th>
+              <th className="px-4 py-2 font-medium">表示名 / 権限 / 所属部署 / パスワード再設定</th>
+              <th className="px-4 py-2 font-medium">状態</th>
+              <th className="px-4 py-2 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => {
+              const assignedIds = new Set(u.departmentLinks.map((l) => l.departmentId));
+              return (
+                <tr key={u.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
+                  <td className="px-4 py-3 text-zinc-500">{u.email}</td>
+                  <td className="px-4 py-3">
+                    <form action={updateAccount} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="id" value={u.id} />
+                      <input
+                        name="displayName"
+                        defaultValue={u.displayName}
+                        className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      />
+                      <select
+                        name="role"
+                        defaultValue={u.role}
+                        className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      >
+                        <option value="STAFF">一般</option>
+                        <option value="ADMIN">管理者</option>
+                      </select>
+                      <input
+                        name="password"
+                        type="text"
+                        placeholder="変更する場合のみ入力"
+                        minLength={8}
+                        className="w-40 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      />
+                      <span className="flex flex-wrap gap-2">
+                        {departments.map((d) => (
+                          <label key={d.id} className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                            <input
+                              type="checkbox"
+                              name="departmentIds"
+                              value={d.id}
+                              defaultChecked={assignedIds.has(d.id)}
+                            />
+                            {d.name}
+                          </label>
+                        ))}
+                      </span>
+                      <button className="text-xs text-blue-600 underline dark:text-blue-400">保存</button>
+                    </form>
+                  </td>
+                  <td className="px-4 py-3">
+                    {u.isActive ? (
+                      <span className="text-green-700 dark:text-green-400">有効</span>
+                    ) : (
+                      <span className="text-zinc-400">無効</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <form action={toggleAccountActive}>
+                      <input type="hidden" name="id" value={u.id} />
+                      <input type="hidden" name="nextActive" value={(!u.isActive).toString()} />
+                      <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
+                        {u.isActive ? "無効化" : "有効化"}
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

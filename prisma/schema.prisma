@@ -1,0 +1,231 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DepartmentType {
+  TRANSPORT // 運搬部署
+  PROCESSING // 処理部署
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum VesselStatus {
+  ACTIVE
+  DECOMMISSIONED
+}
+
+enum BargeDisplayMode {
+  INDIVIDUAL // タンクごとの内訳をツリー表示
+  TOTAL // バージ合計のみ表示
+}
+
+enum TransactionType {
+  RECEIVE // 搬入
+  PROCESS // 処理
+  CALIBRATION // 定期キャリブレーション（実測補正）
+  CORRECTION // 過去記録の訂正（逆仕訳）
+}
+
+// ログイン用アカウント兼、業務上の作業者（operator）
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String // クレンジング規則：全角半角スペースを完全に除去して保存
+  role         UserRole @default(STAFF)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  departmentLinks       OperatorDepartment[]
+  recordedTransactions  TankTransaction[]    @relation("RecordedTransactions")
+  approvedTransactions  TankTransaction[]    @relation("ApprovedTransactions")
+  exportRequests        ExportHistory[]
+
+  @@map("users")
+}
+
+// 部署マスタ（運搬部署A/B、処理部署C）
+model Department {
+  id       String         @id @default(uuid())
+  name     String
+  type     DepartmentType
+  isActive Boolean        @default(true)
+
+  operatorLinks OperatorDepartment[]
+  sites         Site[]
+  transactions  TankTransaction[]
+
+  @@map("masters_department")
+}
+
+// 作業者と部署の多対多（兼任に対応）。入力時に「今回どの部署として作業するか」を選ぶ元データ
+model OperatorDepartment {
+  id           String   @id @default(uuid())
+  userId       String
+  departmentId String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([userId, departmentId])
+  @@map("operator_department")
+}
+
+// 現場マスタ。クレンジング規則：前後の空白のみトリム
+model Site {
+  id           String  @id @default(uuid())
+  name         String
+  departmentId String
+  isActive     Boolean @default(true)
+
+  department   Department        @relation(fields: [departmentId], references: [id])
+  transactions TankTransaction[]
+
+  @@map("masters_site")
+}
+
+// 本船マスタ（受入元の船）
+model Ship {
+  id       String  @id @default(uuid())
+  name     String
+  isActive Boolean @default(true)
+
+  transactions TankTransaction[]
+
+  @@map("masters_ship")
+}
+
+// 内容物マスタ（ビルジ等）。管理画面からはタンク単位で登録し、ここは内部レジストリとして機能する
+// ※台帳の過去データが参照するため、行の物理削除は行わない
+model ItemType {
+  id       String  @id @default(uuid())
+  name     String
+  unit     String  @default("kL")
+  isActive Boolean @default(true)
+
+  transactions TankTransaction[]
+  vesselLinks  VesselItemType[]
+
+  @@map("masters_item_type")
+}
+
+// バージ（船体）マスタ。複数タンクを束ね、残量一覧での表示方法を保持する
+model Barge {
+  id          String           @id @default(uuid())
+  name        String
+  displayMode BargeDisplayMode @default(INDIVIDUAL)
+
+  vessels Vessel[]
+
+  @@map("masters_barge")
+}
+
+// 受入用タンクマスタ。バージに所属させるとバージ残量一覧でグループ表示される
+model Vessel {
+  id               String       @id @default(uuid())
+  name             String
+  maxCapacity      Decimal      @db.Decimal(10, 2)
+  currentBalance   Decimal      @default(0) @db.Decimal(10, 2) // 最新のtank_transactions.balanceAfterを反映するキャッシュ
+  status           VesselStatus @default(ACTIVE)
+  decommissionedAt DateTime?
+  showInList       Boolean      @default(true) // バージ残量一覧に表示するか（記録には影響しない）
+
+  bargeId String?
+  barge   Barge?  @relation(fields: [bargeId], references: [id])
+
+  transactions    TankTransaction[]
+  allowedContents VesselItemType[]
+
+  @@map("master_vessel")
+}
+
+// タンクに入れられる内容物の登録（記録時はここに登録された内容物のみ選択できる）
+model VesselItemType {
+  id         String @id @default(uuid())
+  vesselId   String
+  itemTypeId String
+
+  vessel   Vessel   @relation(fields: [vesselId], references: [id])
+  itemType ItemType @relation(fields: [itemTypeId], references: [id])
+
+  @@unique([vesselId, itemTypeId])
+  @@map("vessel_item_type")
+}
+
+// 追記専用の台帳。搬入・処理・キャリブレーション・訂正のすべてをここに記録する唯一の正データ
+model TankTransaction {
+  id              String          @id @default(uuid())
+  slipId          String // 同一伝票（1回の作業）内の複数品目行をまとめるキー
+  businessDate    DateTime        @db.Date // 業務上の対象日（ユーザー入力可）
+  createdAt       DateTime        @default(now()) // システムに実際に記録された日時（サーバー側で確定、不変）
+  transactionType TransactionType
+
+  vesselId String
+  vessel   Vessel @relation(fields: [vesselId], references: [id])
+
+  recordedById String
+  recordedBy   User   @relation("RecordedTransactions", fields: [recordedById], references: [id])
+
+  departmentId String? // 記録時に選択した「どの部署としての作業か」。CALIBRATIONでは部署に紐づかないためnull
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  siteId String?
+  site   Site?   @relation(fields: [siteId], references: [id])
+
+  shipId String? // RECEIVEの場合のみ使用
+  ship   Ship?   @relation(fields: [shipId], references: [id])
+
+  itemTypeId String? // CALIBRATIONは特定品目に紐づかないためnull
+  itemType   ItemType? @relation(fields: [itemTypeId], references: [id])
+
+  quantity     Decimal @db.Decimal(10, 2) // 符号付き（搬入は+、処理は-）
+  balanceAfter Decimal @db.Decimal(10, 2) // この行が処理された直後の残高スナップショット
+
+  // CALIBRATION用
+  measuredValue      Decimal? @db.Decimal(10, 2) // 実測値
+  systemValueBefore  Decimal? @db.Decimal(10, 2) // 補正前のシステム値
+
+  // CORRECTION用：元の行を参照するのみで、元の行は変更・削除しない
+  referenceTransactionId String?
+  referenceTransaction   TankTransaction?  @relation("TransactionCorrection", fields: [referenceTransactionId], references: [id])
+  corrections            TankTransaction[] @relation("TransactionCorrection")
+
+  reason String? // CALIBRATION・CORRECTIONでは必須（アプリ層でバリデーション）
+
+  approvedById String? // CALIBRATIONは管理者承認必須
+  approvedBy   User?   @relation("ApprovedTransactions", fields: [approvedById], references: [id])
+
+  regulatoryTags String[] // 例: ["INDUSTRIAL_WASTE_MANIFEST", "MARINE_POLLUTION_PREVENTION"]
+
+  @@index([vesselId, businessDate])
+  @@index([slipId])
+  @@map("tank_transactions")
+}
+
+// 公的機関提出等のためのエクスポート実行履歴（誰が・いつ・どの範囲を出力したかの証跡）
+model ExportHistory {
+  id             String   @id @default(uuid())
+  requestedById  String
+  requestedBy    User     @relation(fields: [requestedById], references: [id])
+  periodStart    DateTime @db.Date
+  periodEnd      DateTime @db.Date
+  filterJson     Json // 対象vessel/department等の絞り込み条件
+  format         String // "xlsx" | "pdf" など
+  fileHash       String?
+  createdAt      DateTime @default(now())
+
+  @@map("export_history")
+}
