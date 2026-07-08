@@ -44,17 +44,17 @@ export async function saveBargeSettings(formData: FormData) {
     name: string;
     maxCapacity: number;
     showIndividually: boolean;
-    departmentId: string | null;
+    departmentIds: string[];
   }[] = [];
   for (const id of vesselIds) {
     const name = String(formData.get(`vesselName_${id}`) ?? "").trim();
     const maxCapacity = Number(formData.get(`vesselMaxCapacity_${id}`));
     const showIndividually = formData.get(`vesselShowIndividually_${id}`) === "on";
-    const departmentId = String(formData.get(`vesselDepartmentId_${id}`) ?? "") || null;
+    const departmentIds = formData.getAll(`vesselDepartmentIds_${id}`).map(String).filter(Boolean);
     if (!name || !Number.isFinite(maxCapacity) || maxCapacity <= 0) {
       redirect("/admin/vessels?error=invalid_tank");
     }
-    tankUpdates.push({ id, name, maxCapacity, showIndividually, departmentId });
+    tankUpdates.push({ id, name, maxCapacity, showIndividually, departmentIds });
   }
 
   try {
@@ -90,9 +90,19 @@ export async function saveBargeSettings(formData: FormData) {
               name: t.name,
               maxCapacity: t.maxCapacity,
               showIndividually: t.showIndividually,
-              departmentId: t.departmentId,
             },
           });
+          // 所属部署はチェックボックスの選択状態どおりに張り替える（現場の部署割り当てと同じ方式）
+          await tx.vesselDepartment.deleteMany({
+            where: { vesselId: t.id, departmentId: { notIn: t.departmentIds } },
+          });
+          for (const departmentId of t.departmentIds) {
+            await tx.vesselDepartment.upsert({
+              where: { vesselId_departmentId: { vesselId: t.id, departmentId } },
+              update: {},
+              create: { vesselId: t.id, departmentId },
+            });
+          }
         }
       }),
     );

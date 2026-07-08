@@ -12,7 +12,7 @@ type Content = { id: string; name: string; unit: string };
 type VesselOption = {
   id: string;
   name: string;
-  departmentId: string | null;
+  departmentIds: string[];
   contents: Content[];
 };
 
@@ -33,9 +33,9 @@ export function RecordForm({
 
   const [departmentId, setDepartmentId] = useState(departments[0]?.id ?? "");
 
-  // 受入れタンクは「所属部署が未設定（全部署共通）」または「選択中の部署」のものだけに絞り込む
+  // 受入れタンクは「所属部署が未設定（全部署共通）」または「選択中の部署に含まれる」ものだけに絞り込む
   const filteredVessels = useMemo(
-    () => vessels.filter((v) => v.departmentId === null || v.departmentId === departmentId),
+    () => vessels.filter((v) => v.departmentIds.length === 0 || v.departmentIds.includes(departmentId)),
     [vessels, departmentId],
   );
   // 部署切り替え等で選択中のタンクが絞り込み対象外になった場合、レンダー中に先頭のタンクへフォールバックする
@@ -44,8 +44,27 @@ export function RecordForm({
     ? selectedVesselId
     : (filteredVessels[0]?.id ?? "");
 
+  // 搬入タンク（振替元・任意）：選択すると「タンク間振替」として記録し、振替元の残量を減らして
+  // 受入れタンクの残量を増やす。選択肢は受入れタンクと同じ部署絞り込みで、受入れタンク自身は除く
+  const sourceCandidates = useMemo(
+    () => filteredVessels.filter((v) => v.id !== vesselId),
+    [filteredVessels, vesselId],
+  );
+  const [selectedSourceVesselId, setSourceVesselId] = useState("");
+  const sourceVesselId = sourceCandidates.some((v) => v.id === selectedSourceVesselId)
+    ? selectedSourceVesselId
+    : "";
+  const isTransfer = sourceVesselId !== "";
+
   const selectedVessel = filteredVessels.find((v) => v.id === vesselId);
-  const availableContents = useMemo(() => selectedVessel?.contents ?? [], [selectedVessel]);
+  // 振替の場合は搬入タンク（振替元）にも登録されている内容物だけを選べるようにする
+  const availableContents = useMemo(() => {
+    const destContents = selectedVessel?.contents ?? [];
+    if (!sourceVesselId) return destContents;
+    const sourceVessel = vessels.find((v) => v.id === sourceVesselId);
+    const sourceIds = new Set(sourceVessel?.contents.map((c) => c.id) ?? []);
+    return destContents.filter((c) => sourceIds.has(c.id));
+  }, [selectedVessel, sourceVesselId, vessels]);
 
   const [items, setItems] = useState<{ itemTypeId: string; quantity: string }[]>([
     { itemTypeId: filteredVessels[0]?.contents[0]?.id ?? "", quantity: "" },
@@ -258,6 +277,30 @@ export function RecordForm({
         </div>
       )}
 
+      {isReceive && (
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">搬入タンク（振替元・任意）</label>
+          <select
+            name="sourceVesselId"
+            value={sourceVesselId}
+            onChange={(e) => setSourceVesselId(e.target.value)}
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          >
+            <option value="">なし（通常の搬入）</option>
+            {sourceCandidates.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          {isTransfer && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              タンク間振替として記録します（搬入タンクの残量を減らし、受入れタンクの残量を増やします）
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <label className="mb-1 block text-xs text-zinc-500">受入れタンク</label>
         <select
@@ -277,7 +320,10 @@ export function RecordForm({
 
       <div>
         <label className="mb-2 block text-xs text-zinc-500">
-          内容物・数量{isReceive && "（出荷の場合はマイナスの数量を入力）"}
+          内容物・数量
+          {isTransfer
+            ? "（振替数量・正の値のみ）"
+            : isReceive && "（出荷の場合はマイナスの数量を入力）"}
         </label>
         {noContents ? (
           <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
@@ -307,7 +353,9 @@ export function RecordForm({
                     required
                     value={item.quantity}
                     onChange={(e) => updateItem(index, { quantity: e.target.value })}
-                    placeholder={isReceive ? "数量 (kL・出荷は負数)" : "数量 (kL)"}
+                    placeholder={
+                      isTransfer ? "振替数量 (kL)" : isReceive ? "数量 (kL・出荷は負数)" : "数量 (kL)"
+                    }
                     className="w-40 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                   />
                   {items.length > 1 && (

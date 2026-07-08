@@ -60,8 +60,8 @@ model Department {
 
   operatorLinks OperatorDepartment[]
   siteLinks     SiteDepartment[]
+  vesselLinks   VesselDepartment[]
   transactions  TankTransaction[]
-  vessels       Vessel[]
   trucks        Truck[]
 
   @@map("masters_department")
@@ -188,9 +188,8 @@ model Vessel {
   bargeId String?
   barge   Barge?  @relation(fields: [bargeId], references: [id])
 
-  // 所属部署（任意）。nullは「全部署共通」を意味し、記録画面での絞り込み対象から外れず全部署に表示される
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
+  // 所属部署（複数選択可）。リンクが1件もない＝「全部署共通」を意味し、記録画面での絞り込み対象から外れず全部署に表示される
+  departmentLinks VesselDepartment[]
 
   transactions    TankTransaction[]
   allowedContents VesselItemType[]
@@ -198,6 +197,19 @@ model Vessel {
   // 同一バージ内の同名タンクを禁止（bargeIdがNULL＝所属なし同士はPostgresの仕様上対象外）
   @@unique([bargeId, name])
   @@map("master_vessel")
+}
+
+// タンクと部署の多対多（一つのタンクを複数部署が共用できるようにするため）
+model VesselDepartment {
+  id           String @id @default(uuid())
+  vesselId     String
+  departmentId String
+
+  vessel     Vessel     @relation(fields: [vesselId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([vesselId, departmentId])
+  @@map("vessel_department")
 }
 
 // タンクに入れられる内容物の登録（記録時はここに登録された内容物のみ選択できる）

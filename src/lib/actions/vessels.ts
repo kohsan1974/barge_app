@@ -11,11 +11,18 @@ export async function createVessel(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const maxCapacity = Number(formData.get("maxCapacity"));
   const bargeId = String(formData.get("bargeId") ?? "") || null;
-  const departmentId = String(formData.get("departmentId") ?? "") || null;
+  const departmentIds = formData.getAll("departmentIds").map(String).filter(Boolean);
   if (!name || !Number.isFinite(maxCapacity) || maxCapacity <= 0) return;
 
   try {
-    await prisma.vessel.create({ data: { name, maxCapacity, bargeId, departmentId } });
+    await prisma.vessel.create({
+      data: {
+        name,
+        maxCapacity,
+        bargeId,
+        departmentLinks: { create: departmentIds.map((departmentId) => ({ departmentId })) },
+      },
+    });
   } catch (e) {
     if (isUniqueViolation(e)) redirect("/admin/vessels?error=duplicate_tank");
     throw e;
@@ -41,6 +48,7 @@ export async function deleteVessel(formData: FormData) {
   try {
     await prisma.$transaction([
       prisma.vesselItemType.deleteMany({ where: { vesselId: id } }),
+      prisma.vesselDepartment.deleteMany({ where: { vesselId: id } }),
       prisma.vessel.delete({ where: { id } }),
     ]);
   } catch (e) {

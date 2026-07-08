@@ -23,6 +23,7 @@ export default async function RecordPage() {
       orderBy: { name: "asc" },
       include: {
         barge: true,
+        departmentLinks: { select: { departmentId: true } },
         allowedContents: {
           where: { itemType: { isActive: true } },
           include: { itemType: true },
@@ -53,21 +54,54 @@ export default async function RecordPage() {
   }));
   // トラックは記録者が選んだ部署に属するものだけを選択肢にする
   const truckOptions = trucks.map((t) => ({ id: t.id, name: t.name, departmentId: t.departmentId }));
+
   // バージ間でタンク名が重複しうるため（各バージの「1」等）、バージ名を冠して区別する。
-  // ただし「登録タンクの総量のみで表示する」設定のバージはタンク番号を出さずバージ名のみ表示する。
-  // 各タンクには登録済みの内容物リストと所属部署を添え、選択後に内容物・部署で絞り込む
-  const vesselOptions = vessels
-    .map((v) => ({
+  // ただし「登録タンクの総量のみで表示する」設定のバージは、記録画面でもタンク単位ではなく
+  // バージ単位の1エントリにまとめる（バージ名のみ表示、内容物は配下タンクの和集合、実際の
+  // 数量分配はサーバー側で行う。id は "group:<bargeId>" とし record-transaction.ts 側で解決する）
+  type VesselNode = (typeof vessels)[number];
+  const groupedByBarge = new Map<string, VesselNode[]>();
+  const standalone: VesselNode[] = [];
+  for (const v of vessels) {
+    if (v.barge?.showTotalOnly) {
+      const list = groupedByBarge.get(v.barge.id) ?? [];
+      list.push(v);
+      groupedByBarge.set(v.barge.id, list);
+    } else {
+      standalone.push(v);
+    }
+  }
+
+  const contentsOf = (v: VesselNode) =>
+    v.allowedContents.map((link) => ({
+      id: link.itemType.id,
+      name: link.itemType.name,
+      unit: link.itemType.unit,
+    }));
+
+  const vesselOptions = [
+    ...standalone.map((v) => ({
       id: v.id,
-      name: v.barge ? (v.barge.showTotalOnly ? v.barge.name : `${v.barge.name}-${v.name}`) : v.name,
-      departmentId: v.departmentId,
-      contents: v.allowedContents.map((link) => ({
-        id: link.itemType.id,
-        name: link.itemType.name,
-        unit: link.itemType.unit,
-      })),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+      name: v.barge ? `${v.barge.name}-${v.name}` : v.name,
+      departmentIds: v.departmentLinks.map((l) => l.departmentId),
+      contents: contentsOf(v),
+    })),
+    ...[...groupedByBarge.entries()].map(([bargeId, members]) => {
+      // 未選択（全部署共通）のタンクが1つでもあれば、グループも全部署共通として扱う
+      const hasUnrestricted = members.some((m) => m.departmentLinks.length === 0);
+      const departmentIds = hasUnrestricted
+        ? []
+        : [...new Set(members.flatMap((m) => m.departmentLinks.map((l) => l.departmentId)))];
+      const contentsById = new Map<string, { id: string; name: string; unit: string }>();
+      for (const m of members) for (const c of contentsOf(m)) contentsById.set(c.id, c);
+      return {
+        id: `group:${bargeId}`,
+        name: members[0].barge!.name,
+        departmentIds,
+        contents: [...contentsById.values()],
+      };
+    }),
+  ].sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
   return (
     <div>

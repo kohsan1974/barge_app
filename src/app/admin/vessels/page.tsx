@@ -24,6 +24,7 @@ const errorMessages: Record<string, string> = {
 
 type VesselWithMeta = Vessel & {
   allowedContents: (VesselItemType & { itemType: ItemType })[];
+  departmentLinks: { departmentId: string }[];
   _count: { transactions: number };
 };
 
@@ -70,21 +71,21 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
           />
           kL
         </label>
-        <label className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-          所属部署
-          <select
-            name={`vesselDepartmentId_${vessel.id}`}
-            defaultValue={vessel.departmentId ?? ""}
-            className="rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-          >
-            <option value="">全部署共通</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+          <legend className="sr-only">所属部署</legend>
+          <span>所属部署（未選択=全部署共通）</span>
+          {departments.map((d) => (
+            <label key={d.id} className="flex items-center gap-0.5">
+              <input
+                type="checkbox"
+                name={`vesselDepartmentIds_${vessel.id}`}
+                value={d.id}
+                defaultChecked={vessel.departmentLinks.some((l) => l.departmentId === d.id)}
+              />
+              {d.name}
+            </label>
+          ))}
+        </fieldset>
         <span className="text-xs text-zinc-400">現在量 {Number(vessel.currentBalance).toFixed(1)}</span>
         {vessel.status === "DECOMMISSIONED" && (
           <span className="text-xs text-zinc-400">廃止済み</span>
@@ -192,18 +193,16 @@ function TankAddForm({ bargeId, departments }: { bargeId: string | null; departm
         placeholder="最大容量(kL)"
         className="w-32 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
       />
-      <select
-        name="departmentId"
-        defaultValue=""
-        className="rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-      >
-        <option value="">全部署共通</option>
+      <fieldset className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+        <legend className="sr-only">所属部署</legend>
+        <span>所属部署（未選択=全部署共通）</span>
         {departments.map((d) => (
-          <option key={d.id} value={d.id}>
+          <label key={d.id} className="flex items-center gap-0.5">
+            <input type="checkbox" name="departmentIds" value={d.id} />
             {d.name}
-          </option>
+          </label>
         ))}
-      </select>
+      </fieldset>
       <button className="rounded bg-zinc-900 px-3 py-1 text-xs text-white dark:bg-zinc-50 dark:text-zinc-900">
         タンク追加
       </button>
@@ -276,6 +275,7 @@ export default async function VesselsPage({
 
   const vesselInclude = {
     allowedContents: { include: { itemType: true }, orderBy: { itemType: { name: "asc" } } },
+    departmentLinks: { select: { departmentId: true } },
     _count: { select: { transactions: true } },
   } as const;
 
