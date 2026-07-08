@@ -5,6 +5,7 @@ import { buildLedgerRows, LEDGER_HEADER } from "@/lib/ledger-export";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const LEDGER_TAB = "台帳";
 const TANKS_TAB = "タンク残量";
+const MERGE_LOG_TAB = "現場統合ログ";
 
 type SheetsClient = { jwt: JWT; sheetId: string };
 
@@ -79,7 +80,7 @@ export async function syncAllToSheets(): Promise<SheetsSyncResult> {
   }
 
   try {
-    await ensureTabs(client, [LEDGER_TAB, TANKS_TAB]);
+    await ensureTabs(client, [LEDGER_TAB, TANKS_TAB, MERGE_LOG_TAB]);
 
     const rows = await buildLedgerRows({
       from: new Date("1970-01-01"),
@@ -113,6 +114,24 @@ export async function syncAllToSheets(): Promise<SheetsSyncResult> {
       }),
     ];
     await writeTab(client, TANKS_TAB, tankValues);
+
+    // 現場統合の監査ログもミラーする（提出済みCSVとの差異の正当性証明をオフサイトにも残す）
+    const mergeLogs = await prisma.siteMergeLog.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { executedBy: true },
+    });
+    await writeTab(client, MERGE_LOG_TAB, [
+      ["実行日時(JST)", "部署", "統合元", "統合先", "付替行数", "理由", "実行者"],
+      ...mergeLogs.map((m) => [
+        m.createdAt.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }),
+        m.departmentNames.join("、"),
+        m.sourceSiteNames.join("、"),
+        m.targetSiteName,
+        m.movedTransactionCount,
+        m.reason,
+        m.executedBy.displayName,
+      ]),
+    ]);
 
     return {
       ok: true,

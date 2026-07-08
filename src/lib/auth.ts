@@ -18,33 +18,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        email: { label: "メールアドレス", type: "email" },
+        loginId: { label: "ログインID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       authorize: async (credentials) => {
         // アカウントは小文字で保存しているため、入力側も正規化して照合する
-        const email = (credentials?.email as string | undefined)?.trim().toLowerCase();
+        const loginId = (credentials?.loginId as string | undefined)?.trim().toLowerCase();
         const password = credentials?.password as string | undefined;
-        if (!email || !password) return null;
+        if (!loginId || !password) return null;
 
-        // 15分間に5回失敗したメールアドレスは、正しいパスワードでも一時的に拒否する
-        if (isRateLimited(email)) return null;
+        // 15分間に5回失敗したログインIDは、正しいパスワードでも一時的に拒否する
+        if (isRateLimited(loginId)) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({ where: { loginId } });
         if (!user || !user.isActive) {
           await bcrypt.compare(password, await getDummyHash());
-          recordFailure(email);
+          recordFailure(loginId);
           return null;
         }
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
-          recordFailure(email);
+          recordFailure(loginId);
           return null;
         }
 
-        clearFailures(email);
-        return { id: user.id, email: user.email, name: user.displayName, role: user.role };
+        clearFailures(loginId);
+        return { id: user.id, loginId: user.loginId, name: user.displayName, role: user.role };
       },
     }),
   ],

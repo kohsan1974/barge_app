@@ -10,12 +10,17 @@ export default async function ExportPage({
   const params = await searchParams;
   const sheetsConfigured = isSheetsConfigured();
 
-  const [vessels, history] = await Promise.all([
+  const [vessels, history, mergeLogs] = await Promise.all([
     prisma.vessel.findMany({ orderBy: { name: "asc" } }),
     prisma.exportHistory.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
       include: { requestedBy: true },
+    }),
+    prisma.siteMergeLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { executedBy: true },
     }),
   ]);
 
@@ -121,6 +126,54 @@ export default async function ExportPage({
                 GOOGLE_SHEET_ID を設定して再起動
               </li>
             </ol>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+          現場統合の監査ログ
+        </h2>
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          現場の統合を行うと過去の台帳の現場名が変わるため、過去に提出したCSVと再出力の内容（ハッシュ）が一致しなくなることがあります。
+          その差異が「正当なマスタ整理」であることを、このログで証明します。
+        </p>
+        {mergeLogs.length === 0 ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">統合の実行はまだありません。</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium whitespace-nowrap">実行日時(JST)</th>
+                  <th className="px-4 py-2 font-medium">統合元 → 統合先</th>
+                  <th className="px-4 py-2 font-medium whitespace-nowrap">部署</th>
+                  <th className="px-4 py-2 font-medium whitespace-nowrap">付替行数</th>
+                  <th className="px-4 py-2 font-medium">理由</th>
+                  <th className="px-4 py-2 font-medium whitespace-nowrap">実行者</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergeLogs.map((m) => (
+                  <tr key={m.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+                    <td className="px-4 py-2 whitespace-nowrap text-zinc-900 dark:text-zinc-50">
+                      {m.createdAt.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                    </td>
+                    <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                      {m.sourceSiteNames.join("、")} → <span className="font-medium">{m.targetSiteName}</span>
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                      {m.departmentNames.join("、")}
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-zinc-600 dark:text-zinc-400">{m.movedTransactionCount}</td>
+                    <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{m.reason}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                      {m.executedBy.displayName}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

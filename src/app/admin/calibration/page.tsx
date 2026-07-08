@@ -19,7 +19,7 @@ export default async function CalibrationPage() {
   const vesselOptions = vessels
     .map((v) => ({
       id: v.id,
-      name: v.barge ? `${v.barge.name}／${v.name}` : v.name,
+      name: v.barge ? `${v.barge.name}-${v.name}` : v.name,
       currentBalance: Number(v.currentBalance),
       maxCapacity: Number(v.maxCapacity),
     }))
@@ -51,7 +51,7 @@ export default async function CalibrationPage() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                    {c.vessel.barge ? `${c.vessel.barge.name}／${c.vessel.name}` : c.vessel.name}
+                    {c.vessel.barge ? `${c.vessel.barge.name}-${c.vessel.name}` : c.vessel.name}
                   </span>
                   <span className="shrink-0 text-xs text-zinc-400">
                     {c.businessDate.toISOString().slice(0, 10)}

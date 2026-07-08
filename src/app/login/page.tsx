@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -16,13 +16,13 @@ export default function LoginPage() {
     setSubmitting(true);
     setError(null);
     const result = await signIn("credentials", {
-      email,
+      loginId,
       password,
       redirect: false,
     });
     setSubmitting(false);
     if (result?.error) {
-      setError("メールアドレスまたはパスワードが正しくありません");
+      setError("ログインIDまたはパスワードが正しくありません");
       return;
     }
     router.push("/");
@@ -41,13 +41,14 @@ export default function LoginPage() {
         </h1>
         <div className="mb-4">
           <label className="mb-1 block text-sm text-zinc-600 dark:text-zinc-400">
-            メールアドレス
+            ログインID
           </label>
           <input
-            type="email"
+            type="text"
+            autoComplete="username"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={loginId}
+            onChange={(e) => setLoginId(e.target.value)}
             className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>

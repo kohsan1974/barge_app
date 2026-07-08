@@ -27,8 +27,8 @@ export default async function SettingsPage() {
               <dd className="text-zinc-900 dark:text-zinc-50">{user.displayName}</dd>
             </div>
             <div className="flex gap-3">
-              <dt className="w-28 shrink-0 text-zinc-500">メールアドレス</dt>
-              <dd className="text-zinc-900 dark:text-zinc-50">{user.email}</dd>
+              <dt className="w-28 shrink-0 text-zinc-500">ログインID</dt>
+              <dd className="text-zinc-900 dark:text-zinc-50">{user.loginId}</dd>
             </div>
             <div className="flex gap-3">
               <dt className="w-28 shrink-0 text-zinc-500">所属部署</dt>

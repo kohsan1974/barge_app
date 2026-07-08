@@ -2,10 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { createAccount, updateAccount, toggleAccountActive } from "@/lib/actions/accounts";
 
 const errorMessages: Record<string, string> = {
-  invalid_email: "メールアドレスの形式が正しくありません",
+  invalid_login_id: "ログインIDは半角英数字・.・_・-のみ、3〜32文字で入力してください",
   invalid_name: "表示名を入力してください",
   weak_password: "パスワードは8文字以上にしてください",
-  duplicate_email: "このメールアドレスは既に登録されています",
+  duplicate_login_id: "このログインIDは既に使われています",
   last_admin: "最後の有効な管理者を無効化・降格することはできません",
   not_found: "対象のアカウントが見つかりません",
 };
@@ -26,7 +26,7 @@ export default async function AccountsPage({
 
   const [users, departments] = await Promise.all([
     prisma.user.findMany({
-      orderBy: { email: "asc" },
+      orderBy: { loginId: "asc" },
       include: { departmentLinks: { where: { isActive: true }, include: { department: true } } },
     }),
     prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -49,6 +49,7 @@ export default async function AccountsPage({
           </p>
         )}
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          ログインIDは管理者が発行します（会社メールを持たない作業者にも対応、半角英数字・.・_・-のみ、3〜32文字）。
           表示名は保存時に文字列内のすべての空白（全角・半角）が自動的に除去されます。部署は複数選択でき、兼任している作業者に対応します。
         </p>
         <form
@@ -56,11 +57,12 @@ export default async function AccountsPage({
           className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">メールアドレス</label>
+            <label className="mb-1 block text-xs text-zinc-500">ログインID</label>
             <input
-              name="email"
-              type="email"
+              name="loginId"
+              type="text"
               required
+              pattern="[A-Za-z0-9_.@\-]{3,32}"
               className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
             />
           </div>
@@ -111,8 +113,7 @@ export default async function AccountsPage({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
-              <th className="px-4 py-2 font-medium">メールアドレス</th>
-              <th className="px-4 py-2 font-medium">表示名 / 権限 / 所属部署 / パスワード再設定</th>
+              <th className="px-4 py-2 font-medium">ログインID / 表示名 / 権限 / 所属部署 / パスワード再設定</th>
               <th className="px-4 py-2 font-medium">状態</th>
               <th className="px-4 py-2 font-medium"></th>
             </tr>
@@ -122,10 +123,15 @@ export default async function AccountsPage({
               const assignedIds = new Set(u.departmentLinks.map((l) => l.departmentId));
               return (
                 <tr key={u.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
-                  <td className="px-4 py-3 text-zinc-500">{u.email}</td>
                   <td className="px-4 py-3">
                     <form action={updateAccount} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={u.id} />
+                      <input
+                        name="loginId"
+                        defaultValue={u.loginId}
+                        pattern="[A-Za-z0-9_.@\-]{3,32}"
+                        className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      />
                       <input
                         name="displayName"
                         defaultValue={u.displayName}

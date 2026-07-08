@@ -23,15 +23,21 @@ async function main() {
     create: { id: "seed-processing", name: "処理部署", type: "PROCESSING" },
   });
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
+  const adminLoginId = process.env.SEED_ADMIN_LOGIN_ID ?? "admin";
+  // 既定パスワードでのシードは禁止。必ず環境変数で強いパスワードを渡す（本番アカウント乗っ取り防止）
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword.length < 8) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD（8文字以上）を環境変数に設定してください。既定パスワードでのシードは許可していません。",
+    );
+  }
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
+    where: { loginId: adminLoginId },
     update: {},
     create: {
-      email: adminEmail,
+      loginId: adminLoginId,
       passwordHash,
       displayName: "管理者",
       role: "ADMIN",
@@ -61,15 +67,25 @@ async function main() {
     create: { id: "seed-ship-1", name: "サンプル本船1号" },
   });
 
-  await prisma.site.upsert({
+  const siteA = await prisma.site.upsert({
     where: { id: "seed-site-1" },
     update: {},
-    create: { id: "seed-site-1", name: "現場A", departmentId: transportA.id },
+    create: { id: "seed-site-1", name: "現場A" },
   });
-  await prisma.site.upsert({
+  const siteB = await prisma.site.upsert({
     where: { id: "seed-site-2" },
     update: {},
-    create: { id: "seed-site-2", name: "現場B", departmentId: transportB.id },
+    create: { id: "seed-site-2", name: "現場B" },
+  });
+  await prisma.siteDepartment.upsert({
+    where: { siteId_departmentId: { siteId: siteA.id, departmentId: transportA.id } },
+    update: {},
+    create: { siteId: siteA.id, departmentId: transportA.id },
+  });
+  await prisma.siteDepartment.upsert({
+    where: { siteId_departmentId: { siteId: siteB.id, departmentId: transportB.id } },
+    update: {},
+    create: { siteId: siteB.id, departmentId: transportB.id },
   });
 
   await prisma.vessel.upsert({
@@ -85,8 +101,9 @@ async function main() {
 
   console.log("シード完了:");
   console.log("- 部署:", transportA.name, transportB.name, processing.name);
-  console.log("- 管理者ログイン:", adminEmail, "/ 初期パスワード:", adminPassword);
-  console.log("  ※初回ログイン後、必ずパスワードを変更してください（変更機能は今後実装します）");
+  // パスワードはログに出さない（CI/デプロイログからの漏洩防止）。設定した値でログインする
+  console.log("- 管理者ログイン:", adminLoginId, "/ パスワードは SEED_ADMIN_PASSWORD で設定した値");
+  console.log("  ※ログイン後は /settings からいつでも変更できます");
 }
 
 main()

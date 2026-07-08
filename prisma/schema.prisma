@@ -25,11 +25,6 @@ enum VesselStatus {
   DECOMMISSIONED
 }
 
-enum BargeDisplayMode {
-  INDIVIDUAL // タンクごとの内訳をツリー表示
-  TOTAL // バージ合計のみ表示
-}
-
 enum TransactionType {
   RECEIVE // 搬入
   PROCESS // 処理
@@ -40,7 +35,7 @@ enum TransactionType {
 // ログイン用アカウント兼、業務上の作業者（operator）
 model User {
   id           String   @id @default(uuid())
-  email        String   @unique
+  loginId      String   @unique // 会社メールを持たない作業者もいるため、メール形式を強制しない管理者発行のログインID
   passwordHash String
   displayName  String // クレンジング規則：全角半角スペースを完全に除去して保存
   role         UserRole @default(STAFF)
@@ -51,6 +46,7 @@ model User {
   recordedTransactions  TankTransaction[]    @relation("RecordedTransactions")
   approvedTransactions  TankTransaction[]    @relation("ApprovedTransactions")
   exportRequests        ExportHistory[]
+  siteMergeLogs         SiteMergeLog[]
 
   @@map("users")
 }
@@ -63,8 +59,10 @@ model Department {
   isActive Boolean        @default(true)
 
   operatorLinks OperatorDepartment[]
-  sites         Site[]
+  siteLinks     SiteDepartment[]
   transactions  TankTransaction[]
+  vessels       Vessel[]
+  trucks        Truck[]
 
   @@map("masters_department")
 }
@@ -84,35 +82,77 @@ model OperatorDepartment {
   @@map("operator_department")
 }
 
-// 現場マスタ。クレンジング規則：前後の空白のみトリム
+// 現場マスタ。クレンジング規則：前後の空白のみトリム。
+// 一つの現場を複数部署が共用できるよう、所属部署はSiteDepartmentで多対多にしている
 model Site {
+  id       String  @id @default(uuid())
+  name     String  @unique // 同一物理現場は1レコード。自由入力の同時送信による重複登録もDBレベルで根絶
+  isActive Boolean @default(true)
+
+  departmentLinks SiteDepartment[]
+  shipLinks       SiteShip[]
+  transactions    TankTransaction[]
+
+  @@map("masters_site")
+}
+
+// 現場と部署の多対多（一現場を複数部署が共用するケースに対応）
+model SiteDepartment {
+  id           String @id @default(uuid())
+  siteId       String
+  departmentId String
+
+  site       Site       @relation(fields: [siteId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([siteId, departmentId])
+  @@map("site_department")
+}
+
+// 本船マスタ（受入元の船）。独立の管理画面は持たず、現場マスタの中で現場ごとに追加・割り振りする
+model Ship {
+  id       String  @id @default(uuid())
+  name     String  @unique // 公的書類上の識別性を保つため同名禁止
+  isActive Boolean @default(true)
+
+  siteLinks    SiteShip[]
+  transactions TankTransaction[]
+
+  @@map("masters_ship")
+}
+
+// 現場と本船の多対多（記録画面では「選択された現場に登録されている本船のみ」を表示するための紐付け）
+model SiteShip {
+  id     String @id @default(uuid())
+  siteId String
+  shipId String
+
+  site Site @relation(fields: [siteId], references: [id])
+  ship Ship @relation(fields: [shipId], references: [id])
+
+  @@unique([siteId, shipId])
+  @@map("site_ship")
+}
+
+// トラックマスタ（搬入用の陸送車両）。容量・残量管理の対象外の「容器ではない」搬入手段のため、
+// バージ/タンクとは別に管理し、部署ごとの選択肢絞り込みのため所属部署を必須とする
+model Truck {
   id           String  @id @default(uuid())
-  name         String
+  name         String  @unique
   departmentId String
   isActive     Boolean @default(true)
 
   department   Department        @relation(fields: [departmentId], references: [id])
   transactions TankTransaction[]
 
-  @@map("masters_site")
-}
-
-// 本船マスタ（受入元の船）
-model Ship {
-  id       String  @id @default(uuid())
-  name     String
-  isActive Boolean @default(true)
-
-  transactions TankTransaction[]
-
-  @@map("masters_ship")
+  @@map("masters_truck")
 }
 
 // 内容物マスタ（ビルジ等）。管理画面からはタンク単位で登録し、ここは内部レジストリとして機能する
 // ※台帳の過去データが参照するため、行の物理削除は行わない
 model ItemType {
   id       String  @id @default(uuid())
-  name     String
+  name     String  @unique // 名前でfindFirst→自動作成するため、レースによる重複をDBレベルで防ぐ
   unit     String  @default("kL")
   isActive Boolean @default(true)
 
@@ -122,11 +162,13 @@ model ItemType {
   @@map("masters_item_type")
 }
 
-// バージ（船体）マスタ。複数タンクを束ね、残量一覧での表示方法を保持する
+// バージ（船体）マスタ。複数タンクを束ね、残量一覧でグループ集計する
 model Barge {
-  id          String           @id @default(uuid())
-  name        String
-  displayMode BargeDisplayMode @default(INDIVIDUAL)
+  id               String       @id @default(uuid())
+  name             String       @unique // 公的書類の「バージ名／タンク名」表記の識別性を保つため同名禁止
+  showTotalOnly    Boolean      @default(false) // 残量一覧でタンクのツリーを出さず、登録タンクの総量のみ表示する
+  status           VesselStatus @default(ACTIVE)
+  decommissionedAt DateTime?
 
   vessels Vessel[]
 
@@ -141,14 +183,20 @@ model Vessel {
   currentBalance   Decimal      @default(0) @db.Decimal(10, 2) // 最新のtank_transactions.balanceAfterを反映するキャッシュ
   status           VesselStatus @default(ACTIVE)
   decommissionedAt DateTime?
-  showInList       Boolean      @default(true) // バージ残量一覧に表示するか（記録には影響しない）
+  showIndividually Boolean      @default(true) // バージ配下でツリー行として単一表示するか。falseならバージ合計にのみ含める
 
   bargeId String?
   barge   Barge?  @relation(fields: [bargeId], references: [id])
 
+  // 所属部署（任意）。nullは「全部署共通」を意味し、記録画面での絞り込み対象から外れず全部署に表示される
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
   transactions    TankTransaction[]
   allowedContents VesselItemType[]
 
+  // 同一バージ内の同名タンクを禁止（bargeIdがNULL＝所属なし同士はPostgresの仕様上対象外）
+  @@unique([bargeId, name])
   @@map("master_vessel")
 }
 
@@ -188,10 +236,13 @@ model TankTransaction {
   shipId String? // RECEIVEの場合のみ使用
   ship   Ship?   @relation(fields: [shipId], references: [id])
 
+  truckId String? // RECEIVEでトラック搬入の場合のみ使用（本船と排他ではなく独立した任意選択）
+  truck   Truck?  @relation(fields: [truckId], references: [id])
+
   itemTypeId String? // CALIBRATIONは特定品目に紐づかないためnull
   itemType   ItemType? @relation(fields: [itemTypeId], references: [id])
 
-  quantity     Decimal @db.Decimal(10, 2) // 符号付き（搬入は+、処理は-）
+  quantity     Decimal @db.Decimal(10, 2) // 符号付き（搬入は入力値をそのまま反映＝正が搬入・負が出荷、処理は常に-）
   balanceAfter Decimal @db.Decimal(10, 2) // この行が処理された直後の残高スナップショット
 
   // CALIBRATION用
@@ -213,6 +264,23 @@ model TankTransaction {
   @@index([vesselId, businessDate])
   @@index([slipId])
   @@map("tank_transactions")
+}
+
+// 現場統合の監査ログ。台帳のsiteId訂正（追記専用制約の唯一の例外）の説明責任を担保する。
+// 統合元の現場は物理削除されるため、名称・部署は実行時点のスナップショットとして保持する
+model SiteMergeLog {
+  id                    String   @id @default(uuid())
+  executedById          String
+  executedBy            User     @relation(fields: [executedById], references: [id])
+  departmentNames       String[] // 統合に関わった所属部署名（スナップショット。現場は複数部署に所属し得る）
+  targetSiteId          String // 統合先（現存するSiteのid）
+  targetSiteName        String // 統合先名称（実行時点のスナップショット）
+  sourceSiteNames       String[] // 統合され削除された現場名（スナップショット）
+  movedTransactionCount Int // 付け替えた台帳行数
+  reason                String // 統合理由（必須）
+  createdAt             DateTime @default(now())
+
+  @@map("site_merge_log")
 }
 
 // 公的機関提出等のためのエクスポート実行履歴（誰が・いつ・どの範囲を出力したかの証跡）

@@ -4,32 +4,132 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/require-admin";
+import { isUniqueViolation, uniqueViolationTarget, withDbRetry } from "@/lib/db-utils";
+import { toCenti } from "@/lib/quantity";
 
-function parseDisplayMode(value: unknown): "INDIVIDUAL" | "TOTAL" {
-  return value === "TOTAL" ? "TOTAL" : "INDIVIDUAL";
+// トランザクション内の業務エラーをリダイレクト先エラーコードへ運ぶための例外
+class SaveError extends Error {
+  constructor(public code: string) {
+    super(code);
+  }
 }
 
 export async function createBarge(formData: FormData) {
   await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
-  const displayMode = parseDisplayMode(formData.get("displayMode"));
   if (!name) return;
 
-  await prisma.barge.create({ data: { name, displayMode } });
-  revalidatePath("/admin/barges");
-  revalidatePath("/");
+  try {
+    await prisma.barge.create({ data: { name } });
+  } catch (e) {
+    if (isUniqueViolation(e)) redirect("/admin/vessels?error=duplicate_barge");
+    throw e;
+  }
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
 }
 
-export async function updateBarge(formData: FormData) {
+// バージ1枚分の一括保存。バージ名・総量のみ表示と、フォームに含まれる全タンクの
+// 名前・最大容量・ツリー表示をひとつのトランザクションで更新する
+export async function saveBargeSettings(formData: FormData) {
+  await requireAdmin();
+
+  const bargeId = String(formData.get("bargeId") ?? "") || null;
+  const bargeName = String(formData.get("bargeName") ?? "").trim();
+  const showTotalOnly = formData.get("showTotalOnly") === "on";
+
+  const vesselIds = formData.getAll("vesselId").map(String).filter(Boolean);
+  const tankUpdates: {
+    id: string;
+    name: string;
+    maxCapacity: number;
+    showIndividually: boolean;
+    departmentId: string | null;
+  }[] = [];
+  for (const id of vesselIds) {
+    const name = String(formData.get(`vesselName_${id}`) ?? "").trim();
+    const maxCapacity = Number(formData.get(`vesselMaxCapacity_${id}`));
+    const showIndividually = formData.get(`vesselShowIndividually_${id}`) === "on";
+    const departmentId = String(formData.get(`vesselDepartmentId_${id}`) ?? "") || null;
+    if (!name || !Number.isFinite(maxCapacity) || maxCapacity <= 0) {
+      redirect("/admin/vessels?error=invalid_tank");
+    }
+    tankUpdates.push({ id, name, maxCapacity, showIndividually, departmentId });
+  }
+
+  try {
+    // Neonコールドスタート対策の再試行付き。残量チェックは記録処理と同じ行ロック(FOR UPDATE)の
+    // 中で行い、「チェック直後に搬入が走って残量>容量になる」競合窓を塞ぐ
+    await withDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        if (tankUpdates.length > 0) {
+          const ids = tankUpdates.map((t) => t.id);
+          const locked = await tx.$queryRaw<
+            { id: string; currentBalance: string }[]
+          >`SELECT "id", "currentBalance" FROM "master_vessel" WHERE "id" = ANY(${ids}) FOR UPDATE`;
+          const balances = new Map(locked.map((v) => [v.id, toCenti(v.currentBalance)]));
+          for (const t of tankUpdates) {
+            const balanceCenti = balances.get(t.id);
+            if (balanceCenti === undefined) throw new SaveError("not_found");
+            if (toCenti(t.maxCapacity) < balanceCenti) {
+              throw new SaveError("capacity_below_balance");
+            }
+          }
+        }
+
+        if (bargeId && bargeName) {
+          await tx.barge.update({
+            where: { id: bargeId },
+            data: { name: bargeName, showTotalOnly },
+          });
+        }
+        for (const t of tankUpdates) {
+          await tx.vessel.update({
+            where: { id: t.id },
+            data: {
+              name: t.name,
+              maxCapacity: t.maxCapacity,
+              showIndividually: t.showIndividually,
+              departmentId: t.departmentId,
+            },
+          });
+        }
+      }),
+    );
+  } catch (e) {
+    if (e instanceof SaveError) redirect(`/admin/vessels?error=${e.code}`);
+    if (isUniqueViolation(e)) {
+      // タンクの一意制約は(bargeId, name)の複合、バージはnameのみ。対象で出し分ける
+      const target = uniqueViolationTarget(e);
+      redirect(
+        `/admin/vessels?error=${target.includes("bargeId") ? "duplicate_tank" : "duplicate_barge"}`,
+      );
+    }
+    throw e;
+  }
+
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
+  revalidatePath("/record");
+}
+
+export async function setBargeStatus(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id"));
-  const name = String(formData.get("name") ?? "").trim();
-  const displayMode = parseDisplayMode(formData.get("displayMode"));
-  if (!id || !name) return;
+  const nextStatus = String(formData.get("nextStatus"));
+  if (!id || (nextStatus !== "ACTIVE" && nextStatus !== "DECOMMISSIONED")) return;
 
-  await prisma.barge.update({ where: { id }, data: { name, displayMode } });
-  revalidatePath("/admin/barges");
-  revalidatePath("/");
+  // バージの廃止は配下タンクごと残量一覧・記録対象から外す（タンク自体の状態は変えない）
+  await prisma.barge.update({
+    where: { id },
+    data: {
+      status: nextStatus,
+      decommissionedAt: nextStatus === "DECOMMISSIONED" ? new Date() : null,
+    },
+  });
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
+  revalidatePath("/record");
 }
 
 export async function deleteBarge(formData: FormData) {
@@ -40,10 +140,16 @@ export async function deleteBarge(formData: FormData) {
   // 所属タンクが残っているバージを消すと表示上の行き場がなくなるため拒否する
   const vesselCount = await prisma.vessel.count({ where: { bargeId: id } });
   if (vesselCount > 0) {
-    redirect("/admin/barges?error=has_vessels");
+    redirect("/admin/vessels?error=has_vessels");
   }
 
-  await prisma.barge.delete({ where: { id } });
-  revalidatePath("/admin/barges");
-  revalidatePath("/");
+  try {
+    await prisma.barge.delete({ where: { id } });
+  } catch (e) {
+    // カウント確認と削除の間にタンクが追加された場合は外部キー制約(P2003)で止まる
+    if ((e as { code?: string }).code === "P2003") redirect("/admin/vessels?error=has_vessels");
+    throw e;
+  }
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
 }
