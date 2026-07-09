@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { createDepartment, updateDepartment, toggleDepartmentActive } from "@/lib/actions/departments";
+import { createDepartment, saveDepartments, toggleDepartmentActive } from "@/lib/actions/departments";
+import { StickySaveButton } from "@/components/sticky-save-button";
+
+const FORM_ID = "departments-form";
 
 const typeLabel: Record<string, string> = {
   TRANSPORT: "運搬部署",
@@ -37,11 +40,19 @@ export default async function DepartmentsPage() {
               <option value="PROCESSING">処理部署</option>
             </select>
           </div>
+          <label className="flex items-center gap-1.5 pb-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+            <input type="checkbox" name="requiresTransfer" />
+            バージ間シフト（移動元・移動先必須）
+          </label>
           <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
             追加
           </button>
         </form>
       </div>
+
+      {/* 全部署共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
+      <form id={FORM_ID} action={saveDepartments} />
+      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
@@ -49,6 +60,7 @@ export default async function DepartmentsPage() {
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
               <th className="px-4 py-2 font-medium">部署名</th>
               <th className="px-4 py-2 font-medium">種別</th>
+              <th className="px-4 py-2 font-medium">バージ間シフト</th>
               <th className="px-4 py-2 font-medium">状態</th>
               <th className="px-4 py-2 font-medium"></th>
             </tr>
@@ -57,25 +69,36 @@ export default async function DepartmentsPage() {
             {departments.map((d) => (
               <tr key={d.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                 <td className="px-4 py-2">
-                  <form action={updateDepartment} className="flex items-center gap-2">
-                    <input type="hidden" name="id" value={d.id} />
+                  <div className="flex items-center gap-2">
+                    <input type="hidden" name="departmentIds" value={d.id} form={FORM_ID} />
                     <input
-                      name="name"
+                      name={`name_${d.id}`}
                       defaultValue={d.name}
+                      form={FORM_ID}
                       className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                     />
                     <select
-                      name="type"
+                      name={`type_${d.id}`}
                       defaultValue={d.type}
+                      form={FORM_ID}
                       className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                     >
                       <option value="TRANSPORT">運搬部署</option>
                       <option value="PROCESSING">処理部署</option>
                     </select>
-                    <button className="text-xs text-blue-600 underline dark:text-blue-400">保存</button>
-                  </form>
+                    <label className="flex items-center gap-1 text-xs text-zinc-500">
+                      <input
+                        type="checkbox"
+                        name={`requiresTransfer_${d.id}`}
+                        defaultChecked={d.requiresTransfer}
+                        form={FORM_ID}
+                      />
+                      シフト
+                    </label>
+                  </div>
                 </td>
                 <td className="px-4 py-2 text-zinc-500">{typeLabel[d.type]}</td>
+                <td className="px-4 py-2 text-zinc-500">{d.requiresTransfer ? "対象" : "-"}</td>
                 <td className="px-4 py-2">
                   {d.isActive ? (
                     <span className="text-green-700 dark:text-green-400">有効</span>

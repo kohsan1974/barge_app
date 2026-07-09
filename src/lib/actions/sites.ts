@@ -47,20 +47,24 @@ export async function createSite(formData: FormData) {
   revalidatePath("/record");
 }
 
-export async function updateSite(formData: FormData) {
+// 現場一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する
+export async function saveSites(formData: FormData) {
   await requireAdmin();
-  const id = String(formData.get("id"));
-  const name = cleanseSiteName(String(formData.get("name") ?? ""));
-  const departmentIds = getDepartmentIds(formData);
-  if (!id || !name || departmentIds.length === 0) redirect("/admin/sites?error=no_department");
+  const siteIds = formData.getAll("siteIds").map(String).filter(Boolean);
 
-  try {
-    await prisma.site.update({ where: { id }, data: { name } });
-  } catch (e) {
-    if (isUniqueViolation(e)) redirect("/admin/sites?error=duplicate_site");
-    throw e;
+  for (const id of siteIds) {
+    const name = cleanseSiteName(String(formData.get(`siteName_${id}`) ?? ""));
+    const departmentIds = formData.getAll(`siteDepartmentIds_${id}`).map(String).filter(Boolean);
+    if (!name || departmentIds.length === 0) redirect("/admin/sites?error=no_department");
+
+    try {
+      await prisma.site.update({ where: { id }, data: { name } });
+    } catch (e) {
+      if (isUniqueViolation(e)) redirect("/admin/sites?error=duplicate_site");
+      throw e;
+    }
+    await syncSiteDepartments(id, departmentIds);
   }
-  await syncSiteDepartments(id, departmentIds);
   revalidatePath("/admin/sites");
   revalidatePath("/record");
 }

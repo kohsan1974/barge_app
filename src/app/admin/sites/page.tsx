@@ -1,12 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import {
   createSite,
-  updateSite,
+  saveSites,
   toggleSiteActive,
   mergeSites,
   deleteSite,
 } from "@/lib/actions/sites";
 import { addSiteShip, removeSiteShip } from "@/lib/actions/ships";
+import { StickySaveButton } from "@/components/sticky-save-button";
+
+const FORM_ID = "sites-form";
 
 const errorMessages: Record<string, string> = {
   not_found: "対象の現場が見つかりません",
@@ -88,6 +91,9 @@ export default async function SitesPage({
 
       {/* 重複統合フォーム本体。行内のラジオ/チェックはform属性でここに紐づく */}
       <form id="merge-form" action={mergeSites} />
+      {/* 全現場共通の一括保存フォーム本体（現場名・所属部署編集用）。フィールドはform属性でここに紐づく */}
+      <form id={FORM_ID} action={saveSites} />
+      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-800">
@@ -155,11 +161,12 @@ export default async function SitesPage({
                       />
                     </td>
                     <td className="px-4 py-2">
-                      <form action={updateSite} className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="id" value={s.id} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="siteIds" value={s.id} form={FORM_ID} />
                         <input
-                          name="name"
+                          name={`siteName_${s.id}`}
                           defaultValue={s.name}
+                          form={FORM_ID}
                           className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                         />
                         <span className="flex flex-wrap gap-2">
@@ -167,16 +174,16 @@ export default async function SitesPage({
                             <label key={d.id} className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
                               <input
                                 type="checkbox"
-                                name="departmentIds"
+                                name={`siteDepartmentIds_${s.id}`}
                                 value={d.id}
                                 defaultChecked={assignedIds.has(d.id)}
+                                form={FORM_ID}
                               />
                               {d.name}
                             </label>
                           ))}
                         </span>
-                        <button className="text-xs text-blue-600 underline dark:text-blue-400">保存</button>
-                      </form>
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">

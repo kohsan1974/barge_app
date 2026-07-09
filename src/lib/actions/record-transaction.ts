@@ -26,7 +26,9 @@ type ResolvedTarget = { label: string; members: MemberMeta[] };
 async function resolveTarget(
   ref: string,
   departmentId: string,
+  role: "dest" | "source",
 ): Promise<{ error?: string; target?: ResolvedTarget }> {
+  const roleLabel = role === "dest" ? "受入れタンク" : "搬入タンク";
   if (ref.startsWith(GROUP_PREFIX)) {
     const bargeId = ref.slice(GROUP_PREFIX.length);
     const barge = await prisma.barge.findUnique({
@@ -41,14 +43,17 @@ async function resolveTarget(
       select: {
         id: true,
         name: true,
-        departmentLinks: { select: { departmentId: true } },
+        departmentLinks: { select: { departmentId: true, allowReceiving: true, allowSourcing: true } },
         allowedContents: { select: { itemTypeId: true } },
       },
     });
+    // 役割（受入れ・搬入元）はバージ単位ではなく「タンク×部署」の組ごとに判定する。
+    // 所属部署のないタンクはどの部署にも属さないため、このグループには一切寄与しない
     const members: MemberMeta[] = vessels
       .filter((v) => {
-        const deptIds = v.departmentLinks.map((l) => l.departmentId);
-        return deptIds.length === 0 || deptIds.includes(departmentId);
+        const link = v.departmentLinks.find((l) => l.departmentId === departmentId);
+        if (!link) return false;
+        return role === "dest" ? link.allowReceiving : link.allowSourcing;
       })
       .map((v) => ({
         id: v.id,
@@ -57,7 +62,7 @@ async function resolveTarget(
       }))
       .sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }));
     if (members.length === 0) {
-      return { error: "このバージには選択した部署で利用できるタンクがありません" };
+      return { error: `このバージには選択した部署で${roleLabel}として利用できるタンクがありません` };
     }
     return { target: { label: barge.name, members } };
   }
@@ -67,7 +72,7 @@ async function resolveTarget(
     select: {
       name: true,
       status: true,
-      departmentLinks: { select: { departmentId: true } },
+      departmentLinks: { select: { departmentId: true, allowReceiving: true, allowSourcing: true } },
       allowedContents: { select: { itemTypeId: true } },
       barge: { select: { name: true, status: true } },
     },
@@ -75,9 +80,19 @@ async function resolveTarget(
   if (!vessel || vessel.status !== "ACTIVE" || (vessel.barge && vessel.barge.status !== "ACTIVE")) {
     return { error: "タンクが見つからないか廃止済みです" };
   }
-  const deptIds = vessel.departmentLinks.map((l) => l.departmentId);
-  if (deptIds.length > 0 && !deptIds.includes(departmentId)) {
-    return { error: "このタンクは別の部署に割り当てられているため選択できません" };
+  // 所属部署のないタンクはどの部署にも属さないため選択不可。所属部署があれば、
+  // 選択中の部署とのリンクの役割設定に従う
+  const link = vessel.departmentLinks.find((l) => l.departmentId === departmentId);
+  if (!link) {
+    return {
+      error:
+        vessel.departmentLinks.length === 0
+          ? "このタンクはどの部署にも割り当てられていません。管理者にタンクマスタでの部署割り当てを依頼してください"
+          : "このタンクは別の部署に割り当てられているため選択できません",
+    };
+  }
+  if (role === "dest" ? !link.allowReceiving : !link.allowSourcing) {
+    return { error: `このタンクは${roleLabel}として利用できません` };
   }
   return {
     target: {
@@ -225,21 +240,26 @@ export async function recordTransaction(
     }
   }
 
-  // 廃止済み・部署不一致のタンク／バージへの記録をUI外からのリクエストでも拒否する
-  const destResult = await resolveTarget(vesselRef, departmentId);
+  // 廃止済み・部署不一致・役割不一致のタンク／バージへの記録をUI外からのリクエストでも拒否する
+  const destResult = await resolveTarget(vesselRef, departmentId, "dest");
   if (destResult.error || !destResult.target) return { error: destResult.error ?? "タンクが見つかりません" };
   const destTarget = destResult.target;
 
-  // 搬入タンク（振替元）が指定された場合の検証。振替は搬入(RECEIVE)時のみ利用できる
+  // バージ間シフト指定の部署は、種別に関わらず移動元（搬入タンク）の選択を必須にする
+  if (department.requiresTransfer && !sourceRef) {
+    return { error: "この部署ではバージ間シフトとして、搬入タンク（移動元）の選択が必須です" };
+  }
+
+  // 搬入タンク（振替元）が指定された場合の検証。振替は搬入(RECEIVE)時か、バージ間シフト指定の部署のみ利用できる
   let sourceTarget: ResolvedTarget | null = null;
   if (sourceRef) {
-    if (transactionType !== "RECEIVE") {
+    if (transactionType !== "RECEIVE" && !department.requiresTransfer) {
       return { error: "タンク間振替は搬入の場合のみ利用できます" };
     }
     if (sourceRef === vesselRef) {
       return { error: "搬入タンクは受入れタンクと異なるタンクを選んでください" };
     }
-    const sourceResult = await resolveTarget(sourceRef, departmentId);
+    const sourceResult = await resolveTarget(sourceRef, departmentId, "source");
     if (sourceResult.error || !sourceResult.target) {
       return { error: sourceResult.error ?? "搬入タンクが見つかりません" };
     }

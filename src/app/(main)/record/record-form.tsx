@@ -1,18 +1,21 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordTransaction, type RecordTransactionState } from "@/lib/actions/record-transaction";
 
-type Department = { id: string; name: string; type: string };
+type Department = { id: string; name: string; type: string; requiresTransfer: boolean };
 type SiteShipOption = { id: string; name: string };
-type Site = { id: string; name: string; departmentIds: string[]; ships: SiteShipOption[] };
+type Site = { id: string; name: string; departmentIds: string[]; types: string[]; ships: SiteShipOption[] };
 type Truck = { id: string; name: string; departmentId: string };
 type Content = { id: string; name: string; unit: string };
+type DeptRole = { departmentId: string; allowReceiving: boolean; allowSourcing: boolean };
 type VesselOption = {
   id: string;
   name: string;
-  departmentIds: string[];
+  // 空＝どの部署にも属していないタンクで、記録画面のどの部署からも選択できない。
+  // 役割はバージ単位ではなく「タンク×部署」の組ごとに個別設定されている
+  departmentRoles: DeptRole[];
   contents: Content[];
 };
 
@@ -32,11 +35,24 @@ export function RecordForm({
   const router = useRouter();
 
   const [departmentId, setDepartmentId] = useState(departments[0]?.id ?? "");
+  const selectedDepartment = departments.find((d) => d.id === departmentId);
+  const isReceive = selectedDepartment?.type === "TRANSPORT";
+  // 部署マスタで「バージ間シフト」に指定された部署は、種別に関わらず常に搬入タンク（移動元）・
+  // 受入れタンク（移動先）の両方を必須にした振替として記録する（例：処理部署だが実態はバージtoバージの移送）
+  const isShift = selectedDepartment?.requiresTransfer ?? false;
 
-  // 受入れタンクは「所属部署が未設定（全部署共通）」または「選択中の部署に含まれる」ものだけに絞り込む
+  // 選択中の部署における、このタンクの役割を解決する。所属部署がない、または選択中の部署との
+  // リンクがなければ、このタンクはそもそも選択対象外（null）
+  const roleFor = useCallback(
+    (v: VesselOption): { allowReceiving: boolean; allowSourcing: boolean } | null =>
+      v.departmentRoles.find((r) => r.departmentId === departmentId) ?? null,
+    [departmentId],
+  );
+
+  // 受入れタンクは「この部署での受入れタンクとして使う設定があるもの」だけに絞り込む
   const filteredVessels = useMemo(
-    () => vessels.filter((v) => v.departmentIds.length === 0 || v.departmentIds.includes(departmentId)),
-    [vessels, departmentId],
+    () => vessels.filter((v) => roleFor(v)?.allowReceiving ?? false),
+    [vessels, roleFor],
   );
   // 部署切り替え等で選択中のタンクが絞り込み対象外になった場合、レンダー中に先頭のタンクへフォールバックする
   const [selectedVesselId, setVesselId] = useState(filteredVessels[0]?.id ?? "");
@@ -45,15 +61,19 @@ export function RecordForm({
     : (filteredVessels[0]?.id ?? "");
 
   // 搬入タンク（振替元・任意）：選択すると「タンク間振替」として記録し、振替元の残量を減らして
-  // 受入れタンクの残量を増やす。選択肢は受入れタンクと同じ部署絞り込みで、受入れタンク自身は除く
+  // 受入れタンクの残量を増やす。選択肢は「この部署での搬入タンクとして使う設定があるもの」に絞り込み、
+  // 受入れタンク自身は除く（受入れタンクと搬入タンクの絞り込みは別属性のため独立して評価する）
   const sourceCandidates = useMemo(
-    () => filteredVessels.filter((v) => v.id !== vesselId),
-    [filteredVessels, vesselId],
+    () => vessels.filter((v) => (roleFor(v)?.allowSourcing ?? false) && v.id !== vesselId),
+    [vessels, roleFor, vesselId],
   );
+  // バージ間シフト部署は移動元が必須のため、未選択時は先頭候補へフォールバックする（受入れタンクと同じ扱い）
   const [selectedSourceVesselId, setSourceVesselId] = useState("");
   const sourceVesselId = sourceCandidates.some((v) => v.id === selectedSourceVesselId)
     ? selectedSourceVesselId
-    : "";
+    : isShift
+      ? (sourceCandidates[0]?.id ?? "")
+      : "";
   const isTransfer = sourceVesselId !== "";
 
   const selectedVessel = filteredVessels.find((v) => v.id === vesselId);
@@ -88,14 +108,14 @@ export function RecordForm({
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   });
 
-  const selectedDepartment = departments.find((d) => d.id === departmentId);
-  const isReceive = selectedDepartment?.type === "TRANSPORT";
-  // 現場は複数部署で共用され得るため候補は全現場から探すが、今の部署がすでに使っている現場を優先表示する
+  // 現場は複数部署で共用され得るため候補は全現場から探すが、選択中の部署と同じ種別（ステータス）の
+  // 現場だけに絞り込み、その上で今の部署がすでに使っている現場を優先表示する
   const orderedSites = useMemo(() => {
-    const own = sites.filter((s) => s.departmentIds.includes(departmentId));
-    const other = sites.filter((s) => !s.departmentIds.includes(departmentId));
+    const sameStatus = sites.filter((s) => s.types.includes(selectedDepartment?.type ?? ""));
+    const own = sameStatus.filter((s) => s.departmentIds.includes(departmentId));
+    const other = sameStatus.filter((s) => !s.departmentIds.includes(departmentId));
     return [...own, ...other];
-  }, [sites, departmentId]);
+  }, [sites, departmentId, selectedDepartment]);
 
   // 現場は自由入力＋既存候補のコンボボックス（同名の重複登録を防ぐため、入力中に候補を表示する）
   const [siteQuery, setSiteQuery] = useState("");
@@ -277,16 +297,19 @@ export function RecordForm({
         </div>
       )}
 
-      {isReceive && (
+      {(isReceive || isShift) && (
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">搬入タンク（振替元・任意）</label>
+          <label className="mb-1 block text-xs text-zinc-500">
+            搬入タンク（移動元）{isShift ? "" : "・振替元・任意"}
+          </label>
           <select
             name="sourceVesselId"
             value={sourceVesselId}
             onChange={(e) => setSourceVesselId(e.target.value)}
+            required={isShift}
             className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           >
-            <option value="">なし（通常の搬入）</option>
+            {!isShift && <option value="">なし（通常の搬入）</option>}
             {sourceCandidates.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
@@ -295,7 +318,9 @@ export function RecordForm({
           </select>
           {isTransfer && (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              タンク間振替として記録します（搬入タンクの残量を減らし、受入れタンクの残量を増やします）
+              {isShift
+                ? "バージ間シフトとして記録します（移動元の残量を減らし、移動先の残量を増やします）"
+                : "タンク間振替として記録します（搬入タンクの残量を減らし、受入れタンクの残量を増やします）"}
             </p>
           )}
         </div>

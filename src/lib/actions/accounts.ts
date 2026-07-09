@@ -73,47 +73,51 @@ export async function createAccount(formData: FormData) {
   redirect("/admin/accounts?ok=created");
 }
 
-export async function updateAccount(formData: FormData) {
+// アカウント一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する
+export async function saveAccounts(formData: FormData) {
   await requireAdmin();
-  const id = String(formData.get("id"));
-  const loginId = String(formData.get("loginId") ?? "").trim().toLowerCase();
-  const displayName = cleanseOperatorName(String(formData.get("displayName") ?? ""));
-  const role = formData.get("role") === "ADMIN" ? ("ADMIN" as const) : ("STAFF" as const);
-  const newPassword = String(formData.get("password") ?? "");
-  const departmentIds = getDepartmentIds(formData);
+  const userIds = formData.getAll("userIds").map(String).filter(Boolean);
 
-  if (!id || !displayName) redirect("/admin/accounts?error=invalid_name");
-  if (!LOGIN_ID_RE.test(loginId)) redirect("/admin/accounts?error=invalid_login_id");
-  if (newPassword && newPassword.length < 8) redirect("/admin/accounts?error=weak_password");
+  for (const id of userIds) {
+    const loginId = String(formData.get(`loginId_${id}`) ?? "").trim().toLowerCase();
+    const displayName = cleanseOperatorName(String(formData.get(`displayName_${id}`) ?? ""));
+    const role = formData.get(`role_${id}`) === "ADMIN" ? ("ADMIN" as const) : ("STAFF" as const);
+    const newPassword = String(formData.get(`password_${id}`) ?? "");
+    const departmentIds = formData.getAll(`departmentIds_${id}`).map(String).filter(Boolean);
 
-  const target = await prisma.user.findUnique({ where: { id } });
-  if (!target) redirect("/admin/accounts?error=not_found");
+    if (!displayName) redirect("/admin/accounts?error=invalid_name");
+    if (!LOGIN_ID_RE.test(loginId)) redirect("/admin/accounts?error=invalid_login_id");
+    if (newPassword && newPassword.length < 8) redirect("/admin/accounts?error=weak_password");
 
-  // 最後の有効な管理者を一般権限へ降格させると誰も管理できなくなるため拒否する
-  if (
-    target.role === "ADMIN" &&
-    target.isActive &&
-    role !== "ADMIN" &&
-    (await otherActiveAdminCount(id)) === 0
-  ) {
-    redirect("/admin/accounts?error=last_admin");
+    const target = await prisma.user.findUnique({ where: { id } });
+    if (!target) redirect("/admin/accounts?error=not_found");
+
+    // 最後の有効な管理者を一般権限へ降格させると誰も管理できなくなるため拒否する
+    if (
+      target.role === "ADMIN" &&
+      target.isActive &&
+      role !== "ADMIN" &&
+      (await otherActiveAdminCount(id)) === 0
+    ) {
+      redirect("/admin/accounts?error=last_admin");
+    }
+
+    try {
+      await prisma.user.update({
+        where: { id },
+        data: {
+          loginId,
+          displayName,
+          role,
+          ...(newPassword ? { passwordHash: await bcrypt.hash(newPassword, 10) } : {}),
+        },
+      });
+    } catch (e) {
+      if (isUniqueViolation(e)) redirect("/admin/accounts?error=duplicate_login_id");
+      throw e;
+    }
+    await syncDepartmentAssignments(id, departmentIds);
   }
-
-  try {
-    await prisma.user.update({
-      where: { id },
-      data: {
-        loginId,
-        displayName,
-        role,
-        ...(newPassword ? { passwordHash: await bcrypt.hash(newPassword, 10) } : {}),
-      },
-    });
-  } catch (e) {
-    if (isUniqueViolation(e)) redirect("/admin/accounts?error=duplicate_login_id");
-    throw e;
-  }
-  await syncDepartmentAssignments(id, departmentIds);
 
   revalidatePath("/admin/accounts");
   redirect("/admin/accounts?ok=updated");

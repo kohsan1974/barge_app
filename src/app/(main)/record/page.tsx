@@ -23,7 +23,7 @@ export default async function RecordPage() {
       orderBy: { name: "asc" },
       include: {
         barge: true,
-        departmentLinks: { select: { departmentId: true } },
+        departmentLinks: { select: { departmentId: true, allowReceiving: true, allowSourcing: true } },
         allowedContents: {
           where: { itemType: { isActive: true } },
           include: { itemType: true },
@@ -36,7 +36,7 @@ export default async function RecordPage() {
       where: { isActive: true },
       orderBy: { name: "asc" },
       include: {
-        departmentLinks: { select: { departmentId: true } },
+        departmentLinks: { select: { departmentId: true, department: { select: { type: true } } } },
         shipLinks: { where: { ship: { isActive: true } }, include: { ship: true } },
       },
     }),
@@ -45,11 +45,13 @@ export default async function RecordPage() {
 
   const departments = assignments.map((a) => a.department);
   // 現場は複数部署に所属できるため、選択中の部署に応じた絞り込みができるよう部署id一覧を添える。
-  // 本船は「選択された現場に登録されている本船のみ」を表示するため、現場ごとの登録本船一覧も添える
+  // 本船は「選択された現場に登録されている本船のみ」を表示するため、現場ごとの登録本船一覧も添える。
+  // types は紐づく部署の種別（運搬/処理）一覧。記録画面では選択中の部署と同じ種別の現場だけに絞り込む
   const siteOptions = sites.map((s) => ({
     id: s.id,
     name: s.name,
     departmentIds: s.departmentLinks.map((l) => l.departmentId),
+    types: [...new Set(s.departmentLinks.map((l) => l.department.type))],
     ships: s.shipLinks.map((l) => ({ id: l.ship.id, name: l.ship.name })),
   }));
   // トラックは記録者が選んだ部署に属するものだけを選択肢にする
@@ -79,25 +81,48 @@ export default async function RecordPage() {
       unit: link.itemType.unit,
     }));
 
+  // 記録画面での役割（受入れ・搬入元）はバージ単位ではなく「タンク×部署」の組ごとに持つ。
+  // departmentRolesが空＝どの部署にも属していないタンクで、記録画面のどの部署からも選択できない
+  // （所属部署を割り当てるまでは記録に使えない、という運用）
+  type DeptRole = { departmentId: string; allowReceiving: boolean; allowSourcing: boolean };
+  const rolesOf = (v: VesselNode): DeptRole[] =>
+    v.departmentLinks.map((l) => ({
+      departmentId: l.departmentId,
+      allowReceiving: l.allowReceiving,
+      allowSourcing: l.allowSourcing,
+    }));
+
   const vesselOptions = [
     ...standalone.map((v) => ({
       id: v.id,
       name: v.barge ? `${v.barge.name}-${v.name}` : v.name,
-      departmentIds: v.departmentLinks.map((l) => l.departmentId),
+      departmentRoles: rolesOf(v),
       contents: contentsOf(v),
     })),
     ...[...groupedByBarge.entries()].map(([bargeId, members]) => {
-      // 未選択（全部署共通）のタンクが1つでもあれば、グループも全部署共通として扱う
-      const hasUnrestricted = members.some((m) => m.departmentLinks.length === 0);
-      const departmentIds = hasUnrestricted
-        ? []
-        : [...new Set(members.flatMap((m) => m.departmentLinks.map((l) => l.departmentId)))];
+      // 部署ごとに、配下タンクのいずれかがその役割で利用可能なら、グループ全体としても利用可能とする
+      // （所属部署のないタンクはどの部署にも寄与しない。実際の分配・可否判定はサーバー側resolveTarget
+      // がタンク単位で改めて絞り込む）
+      const roleMap = new Map<string, { allowReceiving: boolean; allowSourcing: boolean }>();
+      for (const m of members) {
+        for (const link of m.departmentLinks) {
+          const existing = roleMap.get(link.departmentId) ?? { allowReceiving: false, allowSourcing: false };
+          roleMap.set(link.departmentId, {
+            allowReceiving: existing.allowReceiving || link.allowReceiving,
+            allowSourcing: existing.allowSourcing || link.allowSourcing,
+          });
+        }
+      }
+      const departmentRoles: DeptRole[] = [...roleMap.entries()].map(([departmentId, role]) => ({
+        departmentId,
+        ...role,
+      }));
       const contentsById = new Map<string, { id: string; name: string; unit: string }>();
       for (const m of members) for (const c of contentsOf(m)) contentsById.set(c.id, c);
       return {
         id: `group:${bargeId}`,
         name: members[0].barge!.name,
-        departmentIds,
+        departmentRoles,
         contents: [...contentsById.values()],
       };
     }),

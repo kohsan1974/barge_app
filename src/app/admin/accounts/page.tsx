@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { createAccount, updateAccount, toggleAccountActive } from "@/lib/actions/accounts";
+import { createAccount, saveAccounts, toggleAccountActive } from "@/lib/actions/accounts";
+import { StickySaveButton } from "@/components/sticky-save-button";
+
+const FORM_ID = "accounts-form";
 
 const errorMessages: Record<string, string> = {
   invalid_login_id: "ログインIDは半角英数字・.・_・-のみ、3〜32文字で入力してください",
@@ -109,6 +112,10 @@ export default async function AccountsPage({
         </form>
       </div>
 
+      {/* 全アカウント共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
+      <form id={FORM_ID} action={saveAccounts} />
+      <StickySaveButton formId={FORM_ID} />
+
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
           <thead>
@@ -124,32 +131,36 @@ export default async function AccountsPage({
               return (
                 <tr key={u.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
                   <td className="px-4 py-3">
-                    <form action={updateAccount} className="flex flex-wrap items-center gap-2">
-                      <input type="hidden" name="id" value={u.id} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="userIds" value={u.id} form={FORM_ID} />
                       <input
-                        name="loginId"
+                        name={`loginId_${u.id}`}
                         defaultValue={u.loginId}
                         pattern="[A-Za-z0-9_.@\-]{3,32}"
+                        form={FORM_ID}
                         className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                       />
                       <input
-                        name="displayName"
+                        name={`displayName_${u.id}`}
                         defaultValue={u.displayName}
+                        form={FORM_ID}
                         className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                       />
                       <select
-                        name="role"
+                        name={`role_${u.id}`}
                         defaultValue={u.role}
+                        form={FORM_ID}
                         className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                       >
                         <option value="STAFF">一般</option>
                         <option value="ADMIN">管理者</option>
                       </select>
                       <input
-                        name="password"
+                        name={`password_${u.id}`}
                         type="text"
                         placeholder="変更する場合のみ入力"
                         minLength={8}
+                        form={FORM_ID}
                         className="w-40 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                       />
                       <span className="flex flex-wrap gap-2">
@@ -157,16 +168,16 @@ export default async function AccountsPage({
                           <label key={d.id} className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
                             <input
                               type="checkbox"
-                              name="departmentIds"
+                              name={`departmentIds_${u.id}`}
                               value={d.id}
                               defaultChecked={assignedIds.has(d.id)}
+                              form={FORM_ID}
                             />
                             {d.name}
                           </label>
                         ))}
                       </span>
-                      <button className="text-xs text-blue-600 underline dark:text-blue-400">保存</button>
-                    </form>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {u.isActive ? (

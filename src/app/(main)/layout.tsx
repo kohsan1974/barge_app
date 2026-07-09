@@ -1,10 +1,14 @@
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 import { TabBar } from "./tab-bar";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN";
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  // JWTのroleは降格後も古い値が残り得るため、表示判定は毎回DBの現在値で確認する（requireAdminと同じ方針）
+  const user = userId ? await prisma.user.findUnique({ where: { id: userId }, select: { role: true } }) : null;
+  const isAdmin = user?.role === "ADMIN";
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-black">

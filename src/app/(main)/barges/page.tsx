@@ -50,10 +50,11 @@ export default async function BargeStatusPage() {
     if (barge.vessels.length === 0) continue;
     const current = barge.vessels.reduce((sum, v) => sum + Number(v.currentBalance), 0);
     const max = barge.vessels.reduce((sum, v) => sum + Number(v.maxCapacity), 0);
-    // バージ行の内容物は配下タンクの登録内容物の和集合
-    const bargeContents = [
-      ...new Set(barge.vessels.flatMap((v) => v.allowedContents.map((l) => l.itemType.name))),
-    ];
+    // バージ行の内容物は「総量のみ表示」の場合だけ配下タンクの和集合を表示する。
+    // タンクをツリー表示する場合は各タンク行に個別表示されるため、バージ行では二重表示を避ける
+    const bargeContents = barge.showTotalOnly
+      ? [...new Set(barge.vessels.flatMap((v) => v.allowedContents.map((l) => l.itemType.name)))]
+      : [];
     rows.push({
       key: barge.id,
       label: barge.name,
@@ -114,9 +115,9 @@ export default async function BargeStatusPage() {
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
                 <th className="px-2 py-1.5 font-medium whitespace-nowrap sm:px-4">バージ</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap sm:px-4">受入可能</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap sm:px-4">最大容量</th>
-                <th className="px-2 py-1.5 font-medium whitespace-nowrap sm:px-4">積載率</th>
+                <th className="px-2 py-1.5 text-right font-medium whitespace-nowrap sm:px-4">受入可能</th>
+                <th className="px-2 py-1.5 text-right font-medium whitespace-nowrap sm:px-4">最大容量</th>
+                <th className="px-2 py-1.5 text-right font-medium whitespace-nowrap sm:px-4">積載率</th>
                 <th className="px-2 py-1.5 font-medium whitespace-nowrap sm:px-4">内容物</th>
               </tr>
             </thead>
@@ -132,11 +133,17 @@ export default async function BargeStatusPage() {
                         {row.label}
                       </span>
                     ) : (
-                      <span className="font-medium text-zinc-900 dark:text-zinc-50">{row.label}</span>
+                      <span className="inline-flex items-center gap-1.5 font-medium text-zinc-900 dark:text-zinc-50">
+                        {row.label}
+                        <span
+                          className={`inline-block h-2 w-2 shrink-0 rounded-full ${rateColor(row.rate)}`}
+                          aria-hidden="true"
+                        />
+                      </span>
                     )}
                   </td>
                   <td
-                    className={`px-2 tabular-nums whitespace-nowrap sm:px-4 ${row.isChild ? "py-0.5" : "py-1.5"} ${
+                    className={`px-2 text-right tabular-nums whitespace-nowrap sm:px-4 ${row.isChild ? "py-0.5" : "py-1.5"} ${
                       row.isChild
                         ? "text-xs text-zinc-500 dark:text-zinc-400"
                         : row.available <= 0
@@ -147,7 +154,7 @@ export default async function BargeStatusPage() {
                     {row.available.toFixed(1)}
                   </td>
                   <td
-                    className={`px-2 tabular-nums whitespace-nowrap sm:px-4 ${
+                    className={`px-2 text-right tabular-nums whitespace-nowrap sm:px-4 ${
                       row.isChild
                         ? "py-0.5 text-xs text-zinc-500 dark:text-zinc-400"
                         : "py-1.5 text-zinc-900 dark:text-zinc-50"
@@ -156,7 +163,7 @@ export default async function BargeStatusPage() {
                     {row.max.toFixed(1)}
                   </td>
                   <td className={`px-2 whitespace-nowrap sm:px-4 ${row.isChild ? "py-0.5" : "py-1.5"}`}>
-                    <div className="flex items-center gap-1.5 sm:gap-2">
+                    <div className="flex items-center justify-end gap-1.5 sm:gap-2">
                       <div className={`overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 ${row.isChild ? "h-1.5 w-6 sm:w-16" : "h-2 w-8 sm:w-24"}`}>
                         <div
                           className={`h-full rounded-full ${rateColor(row.rate)}`}

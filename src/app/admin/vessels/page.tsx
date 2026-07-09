@@ -9,6 +9,11 @@ import {
 } from "@/lib/actions/vessels";
 import { createTruck, updateTruck, toggleTruckActive, deleteTruck } from "@/lib/actions/trucks";
 import type { Department, ItemType, Truck, Vessel, VesselItemType } from "@/generated/prisma/client";
+import { StickySaveButton } from "@/components/sticky-save-button";
+
+// 全バージ・全タンクの一括保存フォームのid。フィールドはform属性でここに紐づけ、
+// 画面右下の共通「変更を保存」ボタン1つでページ全体をまとめて送信する
+const FORM_ID = "vessels-form";
 
 const errorMessages: Record<string, string> = {
   not_found: "対象のタンクが見つかりません",
@@ -24,7 +29,7 @@ const errorMessages: Record<string, string> = {
 
 type VesselWithMeta = Vessel & {
   allowedContents: (VesselItemType & { itemType: ItemType })[];
-  departmentLinks: { departmentId: string }[];
+  departmentLinks: { departmentId: string; allowReceiving: boolean; allowSourcing: boolean }[];
   _count: { transactions: number };
 };
 
@@ -39,13 +44,14 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
   const deletable = vessel._count.transactions === 0;
   return (
     <div className="border-t border-zinc-100 px-4 py-2 dark:border-zinc-800">
-      <input type="hidden" name="vesselId" value={vessel.id} />
+      <input type="hidden" name="vesselId" value={vessel.id} form={FORM_ID} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="flex items-center gap-1 text-sm">
           <input
             name={`vesselName_${vessel.id}`}
             defaultValue={vessel.name}
             required
+            form={FORM_ID}
             className="w-14 rounded border border-zinc-300 px-2 py-0.5 text-center text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
           <span className="text-zinc-600 dark:text-zinc-300">タンク</span>
@@ -55,6 +61,7 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
             type="checkbox"
             name={`vesselShowIndividually_${vessel.id}`}
             defaultChecked={vessel.showIndividually}
+            form={FORM_ID}
           />
           バージのツリーとして表示
         </label>
@@ -67,25 +74,11 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
             min="0.1"
             required
             defaultValue={Number(vessel.maxCapacity)}
+            form={FORM_ID}
             className="w-20 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
           kL
         </label>
-        <fieldset className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-          <legend className="sr-only">所属部署</legend>
-          <span>所属部署（未選択=全部署共通）</span>
-          {departments.map((d) => (
-            <label key={d.id} className="flex items-center gap-0.5">
-              <input
-                type="checkbox"
-                name={`vesselDepartmentIds_${vessel.id}`}
-                value={d.id}
-                defaultChecked={vessel.departmentLinks.some((l) => l.departmentId === d.id)}
-              />
-              {d.name}
-            </label>
-          ))}
-        </fieldset>
         <span className="text-xs text-zinc-400">現在量 {Number(vessel.currentBalance).toFixed(1)}</span>
         {vessel.status === "DECOMMISSIONED" && (
           <span className="text-xs text-zinc-400">廃止済み</span>
@@ -100,6 +93,48 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
           </button>
         )}
       </div>
+
+      <fieldset className="mt-1 flex flex-wrap items-center gap-1.5">
+        <legend className="sr-only">所属部署と役割（未選択のタンクはどの部署からも選択できません）</legend>
+        {departments.map((d) => {
+          const link = vessel.departmentLinks.find((l) => l.departmentId === d.id);
+          return (
+            <span
+              key={d.id}
+              className="inline-flex items-center gap-2 rounded border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700"
+            >
+              <label className="flex items-center gap-1 font-medium text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  name={`vesselDepartmentIds_${vessel.id}`}
+                  value={d.id}
+                  defaultChecked={!!link}
+                  form={FORM_ID}
+                />
+                {d.name}
+              </label>
+              <label className="flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400">
+                <input
+                  type="checkbox"
+                  name={`vesselDeptReceiving_${vessel.id}_${d.id}`}
+                  defaultChecked={link?.allowReceiving ?? true}
+                  form={FORM_ID}
+                />
+                受入
+              </label>
+              <label className="flex items-center gap-0.5 text-sky-700 dark:text-sky-400">
+                <input
+                  type="checkbox"
+                  name={`vesselDeptSourcing_${vessel.id}_${d.id}`}
+                  defaultChecked={link?.allowSourcing ?? true}
+                  form={FORM_ID}
+                />
+                搬入
+              </label>
+            </span>
+          );
+        })}
+      </fieldset>
 
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
         <span className="text-xs text-zinc-500">内容物</span>
@@ -194,8 +229,7 @@ function TankAddForm({ bargeId, departments }: { bargeId: string | null; departm
         className="w-32 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
       />
       <fieldset className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-        <legend className="sr-only">所属部署</legend>
-        <span>所属部署（未選択=全部署共通）</span>
+        <legend className="sr-only">所属部署（未選択のタンクはどの部署からも選択できません）</legend>
         {departments.map((d) => (
           <label key={d.id} className="flex items-center gap-0.5">
             <input type="checkbox" name="departmentIds" value={d.id} />
@@ -275,7 +309,7 @@ export default async function VesselsPage({
 
   const vesselInclude = {
     allowedContents: { include: { itemType: true }, orderBy: { itemType: { name: "asc" } } },
-    departmentLinks: { select: { departmentId: true } },
+    departmentLinks: { select: { departmentId: true, allowReceiving: true, allowSourcing: true } },
     _count: { select: { transactions: true } },
   } as const;
 
@@ -308,7 +342,7 @@ export default async function VesselsPage({
         )}
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
           バージ名をクリックすると開閉します。名前・容量・表示設定を変更したら、
-          バージごとの「変更を保存」でまとめて保存してください。
+          右下の「変更を保存」でページ全体をまとめて保存できます。
           現在量（残量）は台帳から自動計算されるため編集できません。
         </p>
         <form
@@ -326,6 +360,10 @@ export default async function VesselsPage({
           </button>
         </form>
       </div>
+
+      {/* 全バージ・全タンク共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
+      <form id={FORM_ID} action={saveBargeSettings} />
+      <StickySaveButton formId={FORM_ID} />
 
       <div className="space-y-3">
         {barges.map((barge) => {
@@ -354,18 +392,24 @@ export default async function VesselsPage({
                   </span>
                 </summary>
 
-                <form action={saveBargeSettings}>
-                  <input type="hidden" name="bargeId" value={barge.id} />
+                <div>
+                  <input type="hidden" name="bargeIds" value={barge.id} form={FORM_ID} />
                   <div className="border-t border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-800">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <input
-                        name="bargeName"
+                        name={`bargeName_${barge.id}`}
                         defaultValue={barge.name}
                         required
+                        form={FORM_ID}
                         className="w-36 rounded border border-zinc-300 px-2 py-0.5 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                       />
                       <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-                        <input type="checkbox" name="showTotalOnly" defaultChecked={barge.showTotalOnly} />
+                        <input
+                          type="checkbox"
+                          name={`showTotalOnly_${barge.id}`}
+                          defaultChecked={barge.showTotalOnly}
+                          form={FORM_ID}
+                        />
                         登録タンクの総量のみで表示する
                       </label>
                     </div>
@@ -392,12 +436,7 @@ export default async function VesselsPage({
                   {barge.vessels.map((v) => (
                     <TankFields key={v.id} vessel={v} departments={departments} />
                   ))}
-                  <div className="border-t border-zinc-100 px-4 py-2 text-right dark:border-zinc-800">
-                    <button className="rounded bg-zinc-900 px-4 py-1 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-                      変更を保存
-                    </button>
-                  </div>
-                </form>
+                </div>
 
                 <form id={`barge-status-${barge.id}`} action={setBargeStatus}>
                   <input type="hidden" name="id" value={barge.id} />
@@ -437,16 +476,11 @@ export default async function VesselsPage({
               所属なしのタンクはありません（バージに所属しないタンクは残量一覧に単独で表示されます）
             </p>
           ) : (
-            <form action={saveBargeSettings} className="border-t border-zinc-100 dark:border-zinc-800">
+            <div className="border-t border-zinc-100 dark:border-zinc-800">
               {standaloneVessels.map((v) => (
                 <TankFields key={v.id} vessel={v} departments={departments} />
               ))}
-              <div className="border-t border-zinc-100 px-4 py-2 text-right dark:border-zinc-800">
-                <button className="rounded bg-zinc-900 px-4 py-1 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-                  変更を保存
-                </button>
-              </div>
-            </form>
+            </div>
           )}
           {standaloneVessels.map((v) => (
             <TankMiniForms key={v.id} vessel={v} />

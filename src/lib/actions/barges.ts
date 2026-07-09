@@ -29,14 +29,20 @@ export async function createBarge(formData: FormData) {
   revalidatePath("/barges");
 }
 
-// バージ1枚分の一括保存。バージ名・総量のみ表示と、フォームに含まれる全タンクの
-// 名前・最大容量・ツリー表示をひとつのトランザクションで更新する
+// バージ・タンクマスタ全体の一括保存。ページ内の全バージ（複数）＋全タンクの
+// 名前・最大容量・表示設定・所属部署・役割をひとつのトランザクションでまとめて更新する
+// （画面右下の共通「変更を保存」ボタンから、開いていないバージ分も含めて送信される）
 export async function saveBargeSettings(formData: FormData) {
   await requireAdmin();
 
-  const bargeId = String(formData.get("bargeId") ?? "") || null;
-  const bargeName = String(formData.get("bargeName") ?? "").trim();
-  const showTotalOnly = formData.get("showTotalOnly") === "on";
+  const bargeIds = formData.getAll("bargeIds").map(String).filter(Boolean);
+  const bargeUpdates: { id: string; name: string; showTotalOnly: boolean }[] = [];
+  for (const id of bargeIds) {
+    const name = String(formData.get(`bargeName_${id}`) ?? "").trim();
+    const showTotalOnly = formData.get(`showTotalOnly_${id}`) === "on";
+    if (!name) redirect("/admin/vessels?error=invalid_tank");
+    bargeUpdates.push({ id, name, showTotalOnly });
+  }
 
   const vesselIds = formData.getAll("vesselId").map(String).filter(Boolean);
   const tankUpdates: {
@@ -59,52 +65,67 @@ export async function saveBargeSettings(formData: FormData) {
 
   try {
     // Neonコールドスタート対策の再試行付き。残量チェックは記録処理と同じ行ロック(FOR UPDATE)の
-    // 中で行い、「チェック直後に搬入が走って残量>容量になる」競合窓を塞ぐ
+    // 中で行い、「チェック直後に搬入が走って残量>容量になる」競合窓を塞ぐ。
+    // 画面右下の共通ボタンで全バージ・全タンクをまとめて送信するため、既定の5秒では
+    // タイムアウトしやすい（タンク数×部署数ぶんの往復が発生する）。timeoutを引き上げて対応する
     await withDbRetry(() =>
-      prisma.$transaction(async (tx) => {
-        if (tankUpdates.length > 0) {
-          const ids = tankUpdates.map((t) => t.id);
-          const locked = await tx.$queryRaw<
-            { id: string; currentBalance: string }[]
-          >`SELECT "id", "currentBalance" FROM "master_vessel" WHERE "id" = ANY(${ids}) FOR UPDATE`;
-          const balances = new Map(locked.map((v) => [v.id, toCenti(v.currentBalance)]));
-          for (const t of tankUpdates) {
-            const balanceCenti = balances.get(t.id);
-            if (balanceCenti === undefined) throw new SaveError("not_found");
-            if (toCenti(t.maxCapacity) < balanceCenti) {
-              throw new SaveError("capacity_below_balance");
+      prisma.$transaction(
+        async (tx) => {
+          if (tankUpdates.length > 0) {
+            const ids = tankUpdates.map((t) => t.id);
+            const locked = await tx.$queryRaw<
+              { id: string; currentBalance: string }[]
+            >`SELECT "id", "currentBalance" FROM "master_vessel" WHERE "id" = ANY(${ids}) FOR UPDATE`;
+            const balances = new Map(locked.map((v) => [v.id, toCenti(v.currentBalance)]));
+            for (const t of tankUpdates) {
+              const balanceCenti = balances.get(t.id);
+              if (balanceCenti === undefined) throw new SaveError("not_found");
+              if (toCenti(t.maxCapacity) < balanceCenti) {
+                throw new SaveError("capacity_below_balance");
+              }
             }
           }
-        }
 
-        if (bargeId && bargeName) {
-          await tx.barge.update({
-            where: { id: bargeId },
-            data: { name: bargeName, showTotalOnly },
-          });
-        }
-        for (const t of tankUpdates) {
-          await tx.vessel.update({
-            where: { id: t.id },
-            data: {
-              name: t.name,
-              maxCapacity: t.maxCapacity,
-              showIndividually: t.showIndividually,
-            },
-          });
-          // 所属部署はチェックボックスの選択状態どおりに張り替える（現場の部署割り当てと同じ方式）
-          await tx.vesselDepartment.deleteMany({
-            where: { vesselId: t.id, departmentId: { notIn: t.departmentIds } },
-          });
-          for (const departmentId of t.departmentIds) {
-            await tx.vesselDepartment.upsert({
-              where: { vesselId_departmentId: { vesselId: t.id, departmentId } },
-              update: {},
-              create: { vesselId: t.id, departmentId },
+          for (const b of bargeUpdates) {
+            await tx.barge.update({
+              where: { id: b.id },
+              data: { name: b.name, showTotalOnly: b.showTotalOnly },
             });
           }
-        }
-      }),
+          for (const t of tankUpdates) {
+            await tx.vessel.update({
+              where: { id: t.id },
+              data: {
+                name: t.name,
+                maxCapacity: t.maxCapacity,
+                showIndividually: t.showIndividually,
+              },
+            });
+          }
+          // 所属部署はチェックボックスの選択状態どおりに張り替える（現場の部署割り当てと同じ方式）。
+          // 受入れ・搬入元の役割はバージ単位ではなく、このタンク×部署の組ごとに個別設定する。
+          // 全タンク分をまとめて1回のdeleteManyで処理し、往復回数を減らす
+          if (tankUpdates.length > 0) {
+            await tx.vesselDepartment.deleteMany({
+              where: {
+                OR: tankUpdates.map((t) => ({ vesselId: t.id, departmentId: { notIn: t.departmentIds } })),
+              },
+            });
+          }
+          for (const t of tankUpdates) {
+            for (const departmentId of t.departmentIds) {
+              const allowReceiving = formData.get(`vesselDeptReceiving_${t.id}_${departmentId}`) === "on";
+              const allowSourcing = formData.get(`vesselDeptSourcing_${t.id}_${departmentId}`) === "on";
+              await tx.vesselDepartment.upsert({
+                where: { vesselId_departmentId: { vesselId: t.id, departmentId } },
+                update: { allowReceiving, allowSourcing },
+                create: { vesselId: t.id, departmentId, allowReceiving, allowSourcing },
+              });
+            }
+          }
+        },
+        { timeout: 30000 },
+      ),
     );
   } catch (e) {
     if (e instanceof SaveError) redirect(`/admin/vessels?error=${e.code}`);
