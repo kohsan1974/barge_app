@@ -40,10 +40,6 @@ export default async function DepartmentsPage() {
               <option value="PROCESSING">処理部署</option>
             </select>
           </div>
-          <label className="flex items-center gap-1.5 pb-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-            <input type="checkbox" name="requiresTransfer" />
-            バージ間シフト（移動元・移動先必須）
-          </label>
           <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
             追加
           </button>
@@ -60,7 +56,6 @@ export default async function DepartmentsPage() {
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
               <th className="px-4 py-2 font-medium">部署名</th>
               <th className="px-4 py-2 font-medium">種別</th>
-              <th className="px-4 py-2 font-medium">バージ間シフト</th>
               <th className="px-4 py-2 font-medium">状態</th>
               <th className="px-4 py-2 font-medium"></th>
             </tr>
@@ -86,19 +81,9 @@ export default async function DepartmentsPage() {
                       <option value="TRANSPORT">運搬部署</option>
                       <option value="PROCESSING">処理部署</option>
                     </select>
-                    <label className="flex items-center gap-1 text-xs text-zinc-500">
-                      <input
-                        type="checkbox"
-                        name={`requiresTransfer_${d.id}`}
-                        defaultChecked={d.requiresTransfer}
-                        form={FORM_ID}
-                      />
-                      シフト
-                    </label>
                   </div>
                 </td>
                 <td className="px-4 py-2 text-zinc-500">{typeLabel[d.type]}</td>
-                <td className="px-4 py-2 text-zinc-500">{d.requiresTransfer ? "対象" : "-"}</td>
                 <td className="px-4 py-2">
                   {d.isActive ? (
                     <span className="text-green-700 dark:text-green-400">有効</span>

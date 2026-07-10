@@ -8,11 +8,10 @@ export async function createDepartment(formData: FormData) {
   await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const type = String(formData.get("type") ?? "TRANSPORT");
-  const requiresTransfer = formData.get("requiresTransfer") === "on";
   if (!name) return;
 
   await prisma.department.create({
-    data: { name, type: type as "TRANSPORT" | "PROCESSING", requiresTransfer },
+    data: { name, type: type as "TRANSPORT" | "PROCESSING" },
   });
   revalidatePath("/admin/departments");
 }
@@ -25,12 +24,11 @@ export async function saveDepartments(formData: FormData) {
   for (const id of departmentIds) {
     const name = String(formData.get(`name_${id}`) ?? "").trim();
     const type = String(formData.get(`type_${id}`) ?? "TRANSPORT");
-    const requiresTransfer = formData.get(`requiresTransfer_${id}`) === "on";
     if (!name) continue;
 
     await prisma.department.update({
       where: { id },
-      data: { name, type: type as "TRANSPORT" | "PROCESSING", requiresTransfer },
+      data: { name, type: type as "TRANSPORT" | "PROCESSING" },
     });
   }
   revalidatePath("/admin/departments");

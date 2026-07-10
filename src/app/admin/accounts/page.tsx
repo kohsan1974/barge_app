@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { createAccount, saveAccounts, toggleAccountActive } from "@/lib/actions/accounts";
+import { createAccount, saveAccounts, toggleAccountActive, deleteAccount } from "@/lib/actions/accounts";
 import { StickySaveButton } from "@/components/sticky-save-button";
 
 const FORM_ID = "accounts-form";
@@ -9,13 +9,15 @@ const errorMessages: Record<string, string> = {
   invalid_name: "表示名を入力してください",
   weak_password: "パスワードは8文字以上にしてください",
   duplicate_login_id: "このログインIDは既に使われています",
-  last_admin: "最後の有効な管理者を無効化・降格することはできません",
+  last_admin: "最後の有効な管理者を無効化・降格・削除することはできません",
   not_found: "対象のアカウントが見つかりません",
+  has_records: "記録のあるアカウントは削除できません（台帳の証跡を保つため。代わりに無効化してください）",
 };
 
 const okMessages: Record<string, string> = {
   created: "アカウントを作成しました",
   updated: "アカウントを更新しました",
+  deleted: "アカウントを削除しました",
 };
 
 export default async function AccountsPage({
@@ -30,7 +32,18 @@ export default async function AccountsPage({
   const [users, departments] = await Promise.all([
     prisma.user.findMany({
       orderBy: { loginId: "asc" },
-      include: { departmentLinks: { where: { isActive: true }, include: { department: true } } },
+      include: {
+        departmentLinks: { where: { isActive: true }, include: { department: true } },
+        // 台帳・監査ログから参照されているアカウントは削除ボタンを出さない（証跡保護）
+        _count: {
+          select: {
+            recordedTransactions: true,
+            approvedTransactions: true,
+            exportRequests: true,
+            siteMergeLogs: true,
+          },
+        },
+      },
     }),
     prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
@@ -128,6 +141,12 @@ export default async function AccountsPage({
           <tbody>
             {users.map((u) => {
               const assignedIds = new Set(u.departmentLinks.map((l) => l.departmentId));
+              const deletable =
+                u._count.recordedTransactions +
+                  u._count.approvedTransactions +
+                  u._count.exportRequests +
+                  u._count.siteMergeLogs ===
+                0;
               return (
                 <tr key={u.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
                   <td className="px-4 py-3">
@@ -187,13 +206,23 @@ export default async function AccountsPage({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <form action={toggleAccountActive}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <input type="hidden" name="nextActive" value={(!u.isActive).toString()} />
-                      <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
-                        {u.isActive ? "無効化" : "有効化"}
-                      </button>
-                    </form>
+                    <div className="flex items-center justify-end gap-3">
+                      <form action={toggleAccountActive}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <input type="hidden" name="nextActive" value={(!u.isActive).toString()} />
+                        <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
+                          {u.isActive ? "無効化" : "有効化"}
+                        </button>
+                      </form>
+                      {deletable && (
+                        <form action={deleteAccount}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <button className="text-xs text-red-600 underline dark:text-red-400">
+                            削除
+                          </button>
+                        </form>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

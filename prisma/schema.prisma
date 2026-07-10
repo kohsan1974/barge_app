@@ -57,9 +57,6 @@ model Department {
   name     String
   type     DepartmentType
   isActive Boolean        @default(true)
-  // trueの場合、この部署の記録は常に「バージ間シフト」として扱い、搬入タンク（移動元）・
-  // 受入れタンク（移動先）の両方を必須にする（種別がPROCESSINGでも振替＝PROCESS+RECEIVEのペアで記録する）
-  requiresTransfer Boolean @default(false)
 
   operatorLinks OperatorDepartment[]
   siteLinks     SiteDepartment[]

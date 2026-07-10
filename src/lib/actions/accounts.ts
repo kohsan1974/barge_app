@@ -141,3 +141,54 @@ export async function toggleAccountActive(formData: FormData) {
   revalidatePath("/admin/accounts");
   redirect("/admin/accounts");
 }
+
+// アカウントの物理削除。台帳・監査ログ・エクスポート履歴から参照されているアカウントは
+// 「誰が記録したか」の法的証跡が失われるため削除できない（無効化を使う）。
+// 参照が一切ないアカウントのみ、部署割当ごと削除する
+export async function deleteAccount(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  if (!id) return;
+
+  const target = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      _count: {
+        select: {
+          recordedTransactions: true,
+          approvedTransactions: true,
+          exportRequests: true,
+          siteMergeLogs: true,
+        },
+      },
+    },
+  });
+  if (!target) redirect("/admin/accounts?error=not_found");
+
+  const referenceCount =
+    target._count.recordedTransactions +
+    target._count.approvedTransactions +
+    target._count.exportRequests +
+    target._count.siteMergeLogs;
+  if (referenceCount > 0) {
+    redirect("/admin/accounts?error=has_records");
+  }
+
+  // 最後の有効な管理者の削除はロックアウトになるため拒否する
+  if (target.role === "ADMIN" && target.isActive && (await otherActiveAdminCount(id)) === 0) {
+    redirect("/admin/accounts?error=last_admin");
+  }
+
+  try {
+    await prisma.$transaction([
+      prisma.operatorDepartment.deleteMany({ where: { userId: id } }),
+      prisma.user.delete({ where: { id } }),
+    ]);
+  } catch (e) {
+    // カウント確認と削除の間に記録が入った場合は外部キー制約(P2003)で止まる
+    if ((e as { code?: string }).code === "P2003") redirect("/admin/accounts?error=has_records");
+    throw e;
+  }
+  revalidatePath("/admin/accounts");
+  redirect("/admin/accounts?ok=deleted");
+}

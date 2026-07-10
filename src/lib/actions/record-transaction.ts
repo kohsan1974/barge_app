@@ -17,9 +17,22 @@ export type RecordTransactionState = {
 
 const GROUP_PREFIX = "group:";
 
+// 作業内容（record-form.tsxと対応）。業務フロー:
+//   運輸: 外部 →トラック→ 受入れタンク（RECEIVE のみ）
+//   船舶: 外部 → 収集バージ（RECEIVE）→ 受入れタンクへ SHIFT
+//   恵比寿: タンク → 受入れタンクへの SHIFT と、最終処分の DISCHARGE（放流・水）/ SHIPOUT（出荷・油）
+// 台帳上は RECEIVE=RECEIVE行(+)、SHIFT=PROCESS(-)+RECEIVE(+)のペア、放流/出荷=PROCESS行(-)+reason
+const OPERATION_LABELS = {
+  RECEIVE: "搬入",
+  SHIFT: "シフト",
+  DISCHARGE: "放流",
+  SHIPOUT: "出荷",
+} as const;
+type Operation = keyof typeof OPERATION_LABELS;
+
 // 「登録タンクの総量のみで表示する」バージは、記録画面でもタンク単位ではなくバージ単位の
-// 1エントリとして扱う。そのため受入れタンク／搬入タンクのidは実タンクidか `group:<bargeId>` の
-// いずれかを取り得る。以下はその解決・分配ロジック
+// 1エントリとして扱う。そのためタンクのidは実タンクidか `group:<bargeId>` のいずれかを取り得る。
+// 以下はその解決・分配ロジック
 type MemberMeta = { id: string; name: string; allowedItemTypeIds: Set<string> };
 type ResolvedTarget = { label: string; members: MemberMeta[] };
 
@@ -28,7 +41,7 @@ async function resolveTarget(
   departmentId: string,
   role: "dest" | "source",
 ): Promise<{ error?: string; target?: ResolvedTarget }> {
-  const roleLabel = role === "dest" ? "受入れタンク" : "搬入タンク";
+  const roleLabel = role === "dest" ? "入れる側" : "出す側";
   if (ref.startsWith(GROUP_PREFIX)) {
     const bargeId = ref.slice(GROUP_PREFIX.length);
     const barge = await prisma.barge.findUnique({
@@ -92,7 +105,7 @@ async function resolveTarget(
     };
   }
   if (role === "dest" ? !link.allowReceiving : !link.allowSourcing) {
-    return { error: `このタンクは${roleLabel}として利用できません` };
+    return { error: `このタンクはこの部署では${roleLabel}として利用できません` };
   }
   return {
     target: {
@@ -128,7 +141,7 @@ async function lockMembers(
 }
 
 // 指定内容物を扱えるタンクへ、名前の昇順で満たす／引き出す形で数量を分配する。
-// deltaCenti が正なら加算（受入・振替先）、負なら減算（処理・出荷・振替元）
+// deltaCenti が正なら加算（搬入・シフト先）、負なら減算（シフト元・放流・出荷）
 function distribute(
   members: LockedMember[],
   itemTypeId: string,
@@ -161,8 +174,9 @@ export async function recordTransaction(
   if (!userId) return { error: "ログインが必要です" };
 
   const departmentId = String(formData.get("departmentId") ?? "");
+  const operationRaw = String(formData.get("operation") ?? "");
   const vesselRef = String(formData.get("vesselId") ?? "");
-  // 搬入タンク（振替元・任意）。指定されるとタンク間振替として扱う
+  // シフトの移動元タンク
   const sourceRef = String(formData.get("sourceVesselId") ?? "") || null;
   // 現場は自由入力（クレンジング規則：前後trim）。既存名と一致すれば再利用、なければ新規登録する
   const siteName = cleanseSiteName(String(formData.get("siteName") ?? ""));
@@ -175,6 +189,11 @@ export async function recordTransaction(
   if (!departmentId || !vesselRef || !businessDateRaw) {
     return { error: "入力内容が不正です" };
   }
+  if (!(operationRaw in OPERATION_LABELS)) {
+    return { error: "作業内容が不正です" };
+  }
+  const operation = operationRaw as Operation;
+  const operationLabel = OPERATION_LABELS[operation];
   if (itemTypeIds.length === 0 || itemTypeIds.some((v) => !v)) {
     return { error: "品目を選択してください" };
   }
@@ -194,19 +213,30 @@ export async function recordTransaction(
   }
 
   const department = await prisma.department.findUniqueOrThrow({ where: { id: departmentId } });
-  const transactionType = department.type === "TRANSPORT" ? "RECEIVE" : "PROCESS";
+  // 部署種別ごとに選べる作業内容を制限する（UI外からの不正リクエストも弾く）。
+  // 搬入（外部からの受入）は運搬部署のみ、放流・出荷（外部への払い出し）は処理部署のみ
+  const allowedOperations: Operation[] =
+    department.type === "TRANSPORT" ? ["RECEIVE", "SHIFT"] : ["SHIFT", "DISCHARGE", "SHIPOUT"];
+  if (!allowedOperations.includes(operation)) {
+    return { error: "この部署では選択できない作業内容です" };
+  }
 
-  // 公的機関提出時に「どの現場での受入か」が欠落しないよう、搬入は現場を必須にする。
-  // 本船は陸の施設からの受入もあるため任意
-  if (transactionType === "RECEIVE" && !siteName) {
+  // 公的機関提出時に「どの現場での受入か」「どこへ出荷したか」が欠落しないよう、
+  // 搬入は現場を、出荷は出荷先を必須にする（出荷先は台帳上siteIdと同じ場所に記録する）。
+  // シフト・放流はタンク内部の作業のため現場を記録しない（入力があっても無視する）
+  if (operation === "RECEIVE" && !siteName) {
     return { error: "搬入の場合は現場を入力してください" };
   }
+  if (operation === "SHIPOUT" && !siteName) {
+    return { error: "出荷の場合は出荷先を入力してください" };
+  }
+  const effectiveSiteName = operation === "RECEIVE" || operation === "SHIPOUT" ? siteName : "";
 
   // 現場名を解決する。現場名は全体で一意（一つの現場を複数部署が共用できる）。
   // 同名現場があれば再利用（重複登録防止）、なければ新規登録し、いずれも今回の部署とのリンクを保証する
   let siteId: string | null = null;
-  if (siteName) {
-    const existingSite = await prisma.site.findFirst({ where: { name: siteName } });
+  if (effectiveSiteName) {
+    const existingSite = await prisma.site.findFirst({ where: { name: effectiveSiteName } });
     if (existingSite) {
       siteId = existingSite.id;
       if (!existingSite.isActive) {
@@ -222,13 +252,13 @@ export async function recordTransaction(
     } else {
       try {
         const createdSite = await prisma.site.create({
-          data: { name: siteName, departmentLinks: { create: { departmentId } } },
+          data: { name: effectiveSiteName, departmentLinks: { create: { departmentId } } },
         });
         siteId = createdSite.id;
       } catch (e) {
         // 同時送信で先に同名現場が作られた場合（unique制約違反）は、その既存現場を使う
         if (!isUniqueViolation(e)) throw e;
-        const raced = await prisma.site.findFirst({ where: { name: siteName } });
+        const raced = await prisma.site.findFirst({ where: { name: effectiveSiteName } });
         if (!raced) return { error: "現場の登録に失敗しました。もう一度お試しください" };
         siteId = raced.id;
         await prisma.siteDepartment.upsert({
@@ -240,46 +270,58 @@ export async function recordTransaction(
     }
   }
 
-  // 廃止済み・部署不一致・役割不一致のタンク／バージへの記録をUI外からのリクエストでも拒否する
-  const destResult = await resolveTarget(vesselRef, departmentId, "dest");
-  if (destResult.error || !destResult.target) return { error: destResult.error ?? "タンクが見つかりません" };
-  const destTarget = destResult.target;
-
-  // バージ間シフト指定の部署は、種別に関わらず移動元（搬入タンク）の選択を必須にする
-  if (department.requiresTransfer && !sourceRef) {
-    return { error: "この部署ではバージ間シフトとして、搬入タンク（移動元）の選択が必須です" };
+  // 対象タンクの解決（廃止済み・部署不一致・役割不一致はUI外からのリクエストでも拒否する）。
+  // 搬入・シフトの vesselRef は「入れる側」、放流・出荷の vesselRef は「出す側」
+  const mainRole = operation === "DISCHARGE" || operation === "SHIPOUT" ? "source" : "dest";
+  const mainResult = await resolveTarget(vesselRef, departmentId, mainRole);
+  if (mainResult.error || !mainResult.target) {
+    return { error: mainResult.error ?? "タンクが見つかりません" };
   }
+  const mainTarget = mainResult.target;
 
-  // 搬入タンク（振替元）が指定された場合の検証。振替は搬入(RECEIVE)時か、バージ間シフト指定の部署のみ利用できる
+  // シフトの移動元の検証
   let sourceTarget: ResolvedTarget | null = null;
-  if (sourceRef) {
-    if (transactionType !== "RECEIVE" && !department.requiresTransfer) {
-      return { error: "タンク間振替は搬入の場合のみ利用できます" };
+  if (operation === "SHIFT") {
+    if (!sourceRef) {
+      return { error: "シフトでは移動元タンクを選択してください" };
     }
     if (sourceRef === vesselRef) {
-      return { error: "搬入タンクは受入れタンクと異なるタンクを選んでください" };
+      return { error: "移動元と移動先には異なるタンクを選んでください" };
     }
     const sourceResult = await resolveTarget(sourceRef, departmentId, "source");
     if (sourceResult.error || !sourceResult.target) {
-      return { error: sourceResult.error ?? "搬入タンクが見つかりません" };
+      return { error: sourceResult.error ?? "移動元タンクが見つかりません" };
     }
     sourceTarget = sourceResult.target;
-    const destIds = new Set(destTarget.members.map((m) => m.id));
+    const destIds = new Set(mainTarget.members.map((m) => m.id));
     if (sourceTarget.members.some((m) => destIds.has(m.id))) {
-      return { error: "搬入タンクと受入れタンクが重複しています" };
+      return { error: "移動元と移動先のタンクが重複しています" };
     }
   }
 
-  if (transactionType === "RECEIVE" && shipId) {
+  // 本船・トラックは搬入のときだけ意味を持つ（他の作業では記録しない）
+  const effectiveShipId = operation === "RECEIVE" ? shipId : null;
+  const effectiveTruckId = operation === "RECEIVE" ? truckId : null;
+  if (operation === "RECEIVE") {
+    // トラックを持つ部署（運輸）の搬入は必ずトラックで行われるため、選択を必須にする
+    const activeTruckCount = await prisma.truck.count({ where: { departmentId, isActive: true } });
+    if (activeTruckCount > 0 && !effectiveTruckId) {
+      return { error: "トラックを選択してください（この部署の搬入はトラックで行われます）" };
+    }
+  }
+  if (effectiveShipId) {
     // 本船は選択された現場に登録されているものだけを許可する（UI外からの不正値も弾く）
     const linked = siteId
-      ? await prisma.siteShip.findUnique({ where: { siteId_shipId: { siteId, shipId } } })
+      ? await prisma.siteShip.findUnique({ where: { siteId_shipId: { siteId, shipId: effectiveShipId } } })
       : null;
     if (!linked) return { error: "選択した本船はこの現場に登録されていません" };
   }
-  if (transactionType === "RECEIVE" && truckId) {
+  if (effectiveTruckId) {
     // トラックは記録者が選択した部署に属するものだけを許可する（UI外からの不正値も弾く）
-    const truck = await prisma.truck.findUnique({ where: { id: truckId }, select: { departmentId: true } });
+    const truck = await prisma.truck.findUnique({
+      where: { id: effectiveTruckId },
+      select: { departmentId: true },
+    });
     if (!truck || truck.departmentId !== departmentId) {
       return { error: "選択したトラックはこの部署に登録されていません" };
     }
@@ -287,14 +329,14 @@ export async function recordTransaction(
 
   // 選択された内容物が、対象タンク群のいずれかに登録されているか確認する（UI外からの不正値も弾く）。
   // 「総量のみ表示」バージはタンクごとの登録内容物の和集合で判定する
-  const destAllowed = new Set(destTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
-  if (itemTypeIds.some((id) => !destAllowed.has(id))) {
+  const mainAllowed = new Set(mainTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
+  if (itemTypeIds.some((id) => !mainAllowed.has(id))) {
     return { error: "このタンクに登録されていない内容物が含まれています" };
   }
   if (sourceTarget) {
     const sourceAllowed = new Set(sourceTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
     if (itemTypeIds.some((id) => !sourceAllowed.has(id))) {
-      return { error: "搬入タンクに登録されていない内容物が含まれています" };
+      return { error: "移動元タンクに登録されていない内容物が含まれています" };
     }
   }
 
@@ -310,27 +352,27 @@ export async function recordTransaction(
     // Neonのコールドスタート（朝一の接続失敗）対策。開始前の失敗のみ安全に再試行される
     await withDbRetry(() =>
       prisma.$transaction(async (tx) => {
-        if (sourceTarget) {
-          // タンク間振替：デッドロック回避のため、対象タンクをまとめてid昇順でロックする
-          const allMembers = [...destTarget.members, ...sourceTarget.members];
+        if (operation === "SHIFT" && sourceTarget) {
+          // シフト：デッドロック回避のため、対象タンクをまとめてid昇順でロックする
+          const allMembers = [...mainTarget.members, ...sourceTarget.members];
           const locked = await lockMembers(tx, allMembers);
-          const destLocked = destTarget.members.map((m) => locked.find((l) => l.id === m.id)!);
+          const destLocked = mainTarget.members.map((m) => locked.find((l) => l.id === m.id)!);
           const sourceLocked = sourceTarget.members.map((m) => locked.find((l) => l.id === m.id)!);
-          const reason = `タンク間振替: ${sourceTarget.label} → ${destTarget.label}`;
+          const reason = `シフト: ${sourceTarget.label} → ${mainTarget.label}`;
 
           for (let i = 0; i < itemTypeIds.length; i++) {
             const quantityCenti = toCenti(quantities[i]);
             if (!Number.isFinite(quantityCenti) || quantityCenti <= 0) {
-              throw new Error("振替数量は0より大きい値を入力してください");
+              throw new Error("シフトの数量は0より大きい値を入力してください");
             }
 
             const destDist = distribute(destLocked, itemTypeIds[i], quantityCenti);
             if (destDist.shortfall > 0) {
-              throw new Error(`受入れタンクの最大容量を超えています（残り ${fromCenti(destDist.shortfall)}kL 分が入りません）`);
+              throw new Error(`移動先タンクの最大容量を超えています（残り ${fromCenti(destDist.shortfall)}kL 分が入りません）`);
             }
             const sourceDist = distribute(sourceLocked, itemTypeIds[i], -quantityCenti);
             if (sourceDist.shortfall > 0) {
-              throw new Error(`搬入タンクの残量を超える振替はできません（不足 ${fromCenti(sourceDist.shortfall)}kL）`);
+              throw new Error(`移動元タンクの残量を超えるシフトはできません（不足 ${fromCenti(sourceDist.shortfall)}kL）`);
             }
 
             for (const a of sourceDist.allocations) {
@@ -361,8 +403,6 @@ export async function recordTransaction(
                   recordedById: userId,
                   departmentId,
                   siteId,
-                  shipId,
-                  truckId,
                   itemTypeId: itemTypeIds[i],
                   quantity: fromCenti(a.deltaCenti),
                   balanceAfter: fromCenti(a.nextBalanceCenti),
@@ -380,28 +420,20 @@ export async function recordTransaction(
           return;
         }
 
-        // 通常の搬入・処理（振替なし）
-        const locked = await lockMembers(tx, destTarget.members);
-        // グループ（総量のみ表示バージ）を選んでいて複数タンクに分配される場合の説明用ラベル
-        const groupReason = destTarget.members.length > 1 ? `${destTarget.label}内で複数タンクに分配` : null;
+        // 搬入（外部→タンク、加算）と放流・出荷（タンク→外部、減算）
+        const locked = await lockMembers(tx, mainTarget.members);
+        const isOutflow = operation === "DISCHARGE" || operation === "SHIPOUT";
+        // グループ（総量のみ表示バージ）で複数タンクに分配される場合の説明用ラベル。
+        // 放流・出荷は作業内容そのものをreasonに残す（公的書類で処分方法を区別するため）
+        const groupNote = mainTarget.members.length > 1 ? `${mainTarget.label}内で複数タンクに分配` : null;
+        const reason = isOutflow ? operationLabel : groupNote;
 
         for (let i = 0; i < itemTypeIds.length; i++) {
           const quantityCenti = toCenti(quantities[i]);
-          if (!Number.isFinite(quantityCenti) || quantityCenti === 0) {
-            throw new Error("数量は0以外の値を入力してください");
+          if (!Number.isFinite(quantityCenti) || quantityCenti <= 0) {
+            throw new Error(`${operationLabel}の数量は0より大きい値を入力してください`);
           }
-
-          // 搬入(RECEIVE)は入力値の符号をそのまま残高に反映する（正=搬入・負=出荷）。
-          // 処理(PROCESS)は従来通り常に減算のみ（誤操作防止のため、入力は正の値に限る）
-          let signedCenti: number;
-          if (transactionType === "RECEIVE") {
-            signedCenti = quantityCenti;
-          } else {
-            if (quantityCenti < 0) {
-              throw new Error("処理の数量は0より大きい値を入力してください");
-            }
-            signedCenti = -quantityCenti;
-          }
+          const signedCenti = isOutflow ? -quantityCenti : quantityCenti;
 
           const dist = distribute(locked, itemTypeIds[i], signedCenti);
           if (dist.shortfall > 0) {
@@ -417,17 +449,17 @@ export async function recordTransaction(
               data: {
                 slipId,
                 businessDate,
-                transactionType,
+                transactionType: isOutflow ? "PROCESS" : "RECEIVE",
                 vesselId: a.id,
                 recordedById: userId,
                 departmentId,
                 siteId,
-                shipId: transactionType === "RECEIVE" ? shipId : null,
-                truckId: transactionType === "RECEIVE" ? truckId : null,
+                shipId: effectiveShipId,
+                truckId: effectiveTruckId,
                 itemTypeId: itemTypeIds[i],
                 quantity: fromCenti(a.deltaCenti),
                 balanceAfter: fromCenti(a.nextBalanceCenti),
-                reason: groupReason,
+                reason,
               },
             });
             const m = locked.find((x) => x.id === a.id)!;
