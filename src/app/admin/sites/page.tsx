@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions/sites";
 import { addSiteShip, removeSiteShip } from "@/lib/actions/ships";
 import { StickySaveButton } from "@/components/sticky-save-button";
+import { ActionButton, FieldLabel, PrimaryButton, TextInput } from "@/components/ui";
 
 const FORM_ID = "sites-form";
 
@@ -67,12 +68,8 @@ export default async function SitesPage({
           className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">現場名</label>
-            <input
-              name="name"
-              required
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>現場名</FieldLabel>
+            <TextInput name="name" required className="py-1.5" />
           </div>
           <fieldset className="flex flex-wrap gap-3">
             <legend className="mb-1 block text-xs text-zinc-500">所属部署（複数選択可）</legend>
@@ -83,9 +80,7 @@ export default async function SitesPage({
               </label>
             ))}
           </fieldset>
-          <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-            追加
-          </button>
+          <PrimaryButton>追加</PrimaryButton>
         </form>
       </div>
 
@@ -103,19 +98,16 @@ export default async function SitesPage({
             （過去の記録は統合先に付け替えられ、所属部署は両方の和集合になり、統合元は削除されます。実行は監査ログに残ります）
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <input
+            <TextInput
               form="merge-form"
               name="reason"
               required
               placeholder="統合理由（必須・例: 表記ゆれの整理）"
-              className="w-64 rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-64 px-2 py-1 text-xs dark:bg-zinc-900"
             />
-            <button
-              form="merge-form"
-              className="rounded bg-zinc-900 px-3 py-1 text-xs text-white dark:bg-zinc-50 dark:text-zinc-900"
-            >
+            <PrimaryButton form="merge-form" className="px-3 py-1 text-xs">
               選択した現場を統合
-            </button>
+            </PrimaryButton>
           </div>
         </div>
         <table className="w-full text-sm">
@@ -163,11 +155,11 @@ export default async function SitesPage({
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <input type="hidden" name="siteIds" value={s.id} form={FORM_ID} />
-                        <input
+                        <TextInput
                           name={`siteName_${s.id}`}
                           defaultValue={s.name}
                           form={FORM_ID}
-                          className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                          className="px-2 py-1"
                         />
                         <span className="flex flex-wrap gap-2">
                           {departments.map((d) => (
@@ -204,13 +196,13 @@ export default async function SitesPage({
                         ))}
                         <form action={addSiteShip} className="inline-flex items-center gap-1">
                           <input type="hidden" name="siteId" value={s.id} />
-                          <input
+                          <TextInput
                             name="shipName"
                             required
                             placeholder="本船名"
-                            className="w-24 rounded border border-zinc-300 px-2 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                            className="w-24 px-2 py-0.5 text-xs"
                           />
-                          <button className="text-xs text-blue-600 underline dark:text-blue-400">追加</button>
+                          <ActionButton tone="blue">追加</ActionButton>
                         </form>
                       </div>
                     </td>
@@ -229,16 +221,12 @@ export default async function SitesPage({
                         <form action={toggleSiteActive}>
                           <input type="hidden" name="id" value={s.id} />
                           <input type="hidden" name="nextActive" value={(!s.isActive).toString()} />
-                          <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
-                            {s.isActive ? "無効化" : "有効化"}
-                          </button>
+                          <ActionButton>{s.isActive ? "無効化" : "有効化"}</ActionButton>
                         </form>
                         {s._count.transactions === 0 && (
                           <form action={deleteSite}>
                             <input type="hidden" name="id" value={s.id} />
-                            <button className="text-xs text-red-600 underline dark:text-red-400">
-                              削除
-                            </button>
+                            <ActionButton tone="red">削除</ActionButton>
                           </form>
                         )}
                       </div>

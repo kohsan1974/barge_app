@@ -1,12 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-
-const typeLabel: Record<string, string> = {
-  RECEIVE: "搬入",
-  PROCESS: "処理",
-  CALIBRATION: "調整",
-  CORRECTION: "訂正",
-};
+import { TRANSACTION_TYPE_LABELS, vesselLabel } from "@/lib/labels";
 
 const PER_PAGE = 50;
 
@@ -57,8 +51,8 @@ export default async function HistoryPage({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                    {typeLabel[t.transactionType] ?? t.transactionType} ・{" "}
-                    {t.vessel.barge ? `${t.vessel.barge.name}-${t.vessel.name}` : t.vessel.name}
+                    {TRANSACTION_TYPE_LABELS[t.transactionType] ?? t.transactionType} ・{" "}
+                    {vesselLabel(t.vessel)}
                     {t.corrections.length > 0 && (
                       <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                         訂正済み

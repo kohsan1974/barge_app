@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { FieldLabel, PrimaryButton, TextInput } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,40 +41,33 @@ export default function LoginPage() {
           ログイン
         </h1>
         <div className="mb-4">
-          <label className="mb-1 block text-sm text-zinc-600 dark:text-zinc-400">
-            ログインID
-          </label>
-          <input
+          {/* ログイン画面のみラベルを一回り大きく表示する（共有スタイルを上書き） */}
+          <FieldLabel className="text-sm text-zinc-600 dark:text-zinc-400">ログインID</FieldLabel>
+          <TextInput
             type="text"
             autoComplete="username"
             required
             value={loginId}
             onChange={(e) => setLoginId(e.target.value)}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full"
           />
         </div>
         <div className="mb-6">
-          <label className="mb-1 block text-sm text-zinc-600 dark:text-zinc-400">
-            パスワード
-          </label>
-          <input
+          <FieldLabel className="text-sm text-zinc-600 dark:text-zinc-400">パスワード</FieldLabel>
+          <TextInput
             type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full"
           />
         </div>
         {error && (
           <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
-        >
+        <PrimaryButton type="submit" disabled={submitting} className="w-full py-2 font-medium">
           {submitting ? "ログイン中..." : "ログイン"}
-        </button>
+        </PrimaryButton>
       </form>
     </div>
   );

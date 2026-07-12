@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { runSheetsSync } from "@/lib/actions/sheets-sync";
+import { FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 export default async function ExportPage({
   searchParams,
@@ -40,40 +41,25 @@ export default async function ExportPage({
           className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">開始日</label>
-            <input
-              type="date"
-              name="from"
-              required
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>開始日</FieldLabel>
+            <TextInput type="date" name="from" required className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">終了日</label>
-            <input
-              type="date"
-              name="to"
-              required
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>終了日</FieldLabel>
+            <TextInput type="date" name="to" required className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">タンク（任意）</label>
-            <select
-              name="vesselId"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            >
+            <FieldLabel>タンク（任意）</FieldLabel>
+            <Select name="vesselId" className="py-1.5">
               <option value="">すべて</option>
               {vessels.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-            CSVをダウンロード
-          </button>
+          <PrimaryButton>CSVをダウンロード</PrimaryButton>
           <a
             href="/api/export?all=1"
             className="text-xs text-zinc-500 underline dark:text-zinc-400"
@@ -109,9 +95,7 @@ export default async function ExportPage({
               シートを直接編集してもDBには反映されません）。デプロイ後は毎日午前3時（日本時間）にも自動同期されます。
             </p>
             <form action={runSheetsSync}>
-              <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-                今すぐスプレッドシートへ同期
-              </button>
+              <PrimaryButton>今すぐスプレッドシートへ同期</PrimaryButton>
             </form>
           </div>
         ) : (

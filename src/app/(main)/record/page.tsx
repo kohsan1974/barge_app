@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { vesselLabel } from "@/lib/labels";
 import { RecordForm } from "./record-form";
 
 export default async function RecordPage() {
@@ -95,7 +96,7 @@ export default async function RecordPage() {
   const vesselOptions = [
     ...standalone.map((v) => ({
       id: v.id,
-      name: v.barge ? `${v.barge.name}-${v.name}` : v.name,
+      name: vesselLabel(v),
       departmentRoles: rolesOf(v),
       contents: contentsOf(v),
     })),

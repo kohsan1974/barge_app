@@ -10,6 +10,15 @@ export function todayJst(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 }
 
+// 端末のローカル日付を "YYYY-MM-DD" で返す（クライアントフォームの業務日初期値用）。
+// toISOString()はUTC基準のため、日本時間の午前0時〜9時に「前日」が初期値になる問題を避ける。
+// ※サーバー側の検証はtodayJst（JST固定）、こちらは端末設定に従う初期値。
+//   各フォームにコピーされていた同一実装をここに一元化した
+export function todayLocalDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 export function validateBusinessDate(raw: string): { date?: Date; error?: string } {
   if (!DATE_RE.test(raw)) {
     return { error: "業務日が正しくありません" };

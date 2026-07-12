@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/require-admin";
 import { cleanseOperatorName } from "@/lib/cleansing";
+import { isUniqueViolation, withDbRetry } from "@/lib/db-utils";
 
 // 会社メールを持たない作業者もいるため、メール形式は強制しない（ただし禁止もしない。
 // 既存アカウントがメール形式のIDのまま運用されていても編集できるよう@も許容する）。
@@ -16,29 +18,28 @@ function getDepartmentIds(formData: FormData): string[] {
   return formData.getAll("departmentIds").map(String).filter(Boolean);
 }
 
-function isUniqueViolation(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
+// 部署割当は物理削除せず isActive で無効化する（誰がいつどの部署に属していたかの監査証跡を残す）。
+// 呼び出し側のトランザクション（tx）内で使えるよう、クライアントを引数で受け取る
+async function syncDepartmentAssignments(
+  db: Prisma.TransactionClient,
+  userId: string,
+  departmentIds: string[],
+) {
+  await db.operatorDepartment.updateMany({
+    where: { userId, departmentId: { notIn: departmentIds } },
+    data: { isActive: false },
+  });
+  for (const departmentId of departmentIds) {
+    await db.operatorDepartment.upsert({
+      where: { userId_departmentId: { userId, departmentId } },
+      update: { isActive: true },
+      create: { userId, departmentId },
+    });
+  }
 }
 
-// 部署割当は物理削除せず isActive で無効化する（誰がいつどの部署に属していたかの監査証跡を残す）
-async function syncDepartmentAssignments(userId: string, departmentIds: string[]) {
-  await prisma.$transaction([
-    prisma.operatorDepartment.updateMany({
-      where: { userId, departmentId: { notIn: departmentIds } },
-      data: { isActive: false },
-    }),
-    ...departmentIds.map((departmentId) =>
-      prisma.operatorDepartment.upsert({
-        where: { userId_departmentId: { userId, departmentId } },
-        update: { isActive: true },
-        create: { userId, departmentId },
-      }),
-    ),
-  ]);
-}
-
-async function otherActiveAdminCount(excludeUserId: string): Promise<number> {
-  return prisma.user.count({
+async function otherActiveAdminCount(db: Prisma.TransactionClient, excludeUserId: string): Promise<number> {
+  return db.user.count({
     where: { role: "ADMIN", isActive: true, id: { not: excludeUserId } },
   });
 }
@@ -57,27 +58,41 @@ export async function createAccount(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  let errorCode: string | null = null;
   try {
-    const user = await prisma.user.create({
-      data: { loginId, displayName, passwordHash, role },
-    });
-    await syncDepartmentAssignments(user.id, departmentIds);
+    // アカウント作成と部署割当をひとつのトランザクションにまとめる
+    // （割当だけ失敗して部署なしアカウントが残る中途半端な状態を防ぐ）
+    await withDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: { loginId, displayName, passwordHash, role },
+        });
+        await syncDepartmentAssignments(tx, user.id, departmentIds);
+      }),
+    );
   } catch (e) {
-    if (isUniqueViolation(e)) errorCode = "duplicate_login_id";
-    else throw e;
+    if (isUniqueViolation(e)) redirect("/admin/accounts?error=duplicate_login_id");
+    throw e;
   }
-  if (errorCode) redirect(`/admin/accounts?error=${errorCode}`);
 
   revalidatePath("/admin/accounts");
   redirect("/admin/accounts?ok=created");
 }
 
-// アカウント一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する
+// アカウント一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する。
+// 先に全行の形式検証とパスワードハッシュ化を済ませてから1つのトランザクションで書き込み、
+// 途中エラーで「一部の行だけ保存された」中途半端な状態にならないようにする（全or無）
 export async function saveAccounts(formData: FormData) {
   await requireAdmin();
   const userIds = formData.getAll("userIds").map(String).filter(Boolean);
 
+  const updates: {
+    id: string;
+    loginId: string;
+    displayName: string;
+    role: "ADMIN" | "STAFF";
+    passwordHash: string | null;
+    departmentIds: string[];
+  }[] = [];
   for (const id of userIds) {
     const loginId = String(formData.get(`loginId_${id}`) ?? "").trim().toLowerCase();
     const displayName = cleanseOperatorName(String(formData.get(`displayName_${id}`) ?? ""));
@@ -89,34 +104,56 @@ export async function saveAccounts(formData: FormData) {
     if (!LOGIN_ID_RE.test(loginId)) redirect("/admin/accounts?error=invalid_login_id");
     if (newPassword && newPassword.length < 8) redirect("/admin/accounts?error=weak_password");
 
-    const target = await prisma.user.findUnique({ where: { id } });
-    if (!target) redirect("/admin/accounts?error=not_found");
+    updates.push({
+      id,
+      loginId,
+      displayName,
+      role,
+      // bcryptは重い処理のためトランザクション外で先に済ませる
+      passwordHash: newPassword ? await bcrypt.hash(newPassword, 10) : null,
+      departmentIds,
+    });
+  }
 
-    // 最後の有効な管理者を一般権限へ降格させると誰も管理できなくなるため拒否する
-    if (
-      target.role === "ADMIN" &&
-      target.isActive &&
-      role !== "ADMIN" &&
-      (await otherActiveAdminCount(id)) === 0
-    ) {
-      redirect("/admin/accounts?error=last_admin");
-    }
+  try {
+    await withDbRetry(() =>
+      prisma.$transaction(
+        async (tx) => {
+          for (const u of updates) {
+            const target = await tx.user.findUnique({ where: { id: u.id } });
+            if (!target) redirect("/admin/accounts?error=not_found");
 
-    try {
-      await prisma.user.update({
-        where: { id },
-        data: {
-          loginId,
-          displayName,
-          role,
-          ...(newPassword ? { passwordHash: await bcrypt.hash(newPassword, 10) } : {}),
+            // 最後の有効な管理者を一般権限へ降格させると誰も管理できなくなるため拒否する。
+            // トランザクション内のカウントは同一保存内で先に処理した降格も反映するため、
+            // 「複数の管理者を同時に全員降格」もまとめて弾ける
+            if (
+              target.role === "ADMIN" &&
+              target.isActive &&
+              u.role !== "ADMIN" &&
+              (await otherActiveAdminCount(tx, u.id)) === 0
+            ) {
+              redirect("/admin/accounts?error=last_admin");
+            }
+
+            await tx.user.update({
+              where: { id: u.id },
+              data: {
+                loginId: u.loginId,
+                displayName: u.displayName,
+                role: u.role,
+                ...(u.passwordHash ? { passwordHash: u.passwordHash } : {}),
+              },
+            });
+            await syncDepartmentAssignments(tx, u.id, u.departmentIds);
+          }
         },
-      });
-    } catch (e) {
-      if (isUniqueViolation(e)) redirect("/admin/accounts?error=duplicate_login_id");
-      throw e;
-    }
-    await syncDepartmentAssignments(id, departmentIds);
+        // アカウント数×部署割当数ぶんの往復が発生するため、既定5秒より長いタイムアウトを確保する
+        { timeout: 30000 },
+      ),
+    );
+  } catch (e) {
+    if (isUniqueViolation(e)) redirect("/admin/accounts?error=duplicate_login_id");
+    throw e;
   }
 
   revalidatePath("/admin/accounts");
@@ -132,7 +169,7 @@ export async function toggleAccountActive(formData: FormData) {
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) redirect("/admin/accounts?error=not_found");
     // 最後の有効な管理者の無効化はロックアウトになるため拒否する
-    if (target.role === "ADMIN" && target.isActive && (await otherActiveAdminCount(id)) === 0) {
+    if (target.role === "ADMIN" && target.isActive && (await otherActiveAdminCount(prisma, id)) === 0) {
       redirect("/admin/accounts?error=last_admin");
     }
   }
@@ -175,7 +212,7 @@ export async function deleteAccount(formData: FormData) {
   }
 
   // 最後の有効な管理者の削除はロックアウトになるため拒否する
-  if (target.role === "ADMIN" && target.isActive && (await otherActiveAdminCount(id)) === 0) {
+  if (target.role === "ADMIN" && target.isActive && (await otherActiveAdminCount(prisma, id)) === 0) {
     redirect("/admin/accounts?error=last_admin");
   }
 

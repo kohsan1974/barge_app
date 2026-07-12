@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createAccount, saveAccounts, toggleAccountActive, deleteAccount } from "@/lib/actions/accounts";
 import { StickySaveButton } from "@/components/sticky-save-button";
+import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 const FORM_ID = "accounts-form";
 
@@ -73,42 +74,23 @@ export default async function AccountsPage({
           className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">ログインID</label>
-            <input
-              name="loginId"
-              type="text"
-              required
-              pattern="[A-Za-z0-9_.@\-]{3,32}"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>ログインID</FieldLabel>
+            <TextInput name="loginId" type="text" required pattern="[A-Za-z0-9_.@\-]{3,32}" className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">表示名</label>
-            <input
-              name="displayName"
-              required
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>表示名</FieldLabel>
+            <TextInput name="displayName" required className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">初期パスワード（8文字以上）</label>
-            <input
-              name="password"
-              type="text"
-              required
-              minLength={8}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>初期パスワード（8文字以上）</FieldLabel>
+            <TextInput name="password" type="text" required minLength={8} className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">権限</label>
-            <select
-              name="role"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            >
+            <FieldLabel>権限</FieldLabel>
+            <Select name="role" className="py-1.5">
               <option value="STAFF">一般</option>
               <option value="ADMIN">管理者</option>
-            </select>
+            </Select>
           </div>
           <fieldset className="flex flex-wrap gap-3">
             <legend className="mb-1 block text-xs text-zinc-500">所属部署</legend>
@@ -119,9 +101,7 @@ export default async function AccountsPage({
               </label>
             ))}
           </fieldset>
-          <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-            追加
-          </button>
+          <PrimaryButton>追加</PrimaryButton>
         </form>
       </div>
 
@@ -152,35 +132,30 @@ export default async function AccountsPage({
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="userIds" value={u.id} form={FORM_ID} />
-                      <input
+                      <TextInput
                         name={`loginId_${u.id}`}
                         defaultValue={u.loginId}
                         pattern="[A-Za-z0-9_.@\-]{3,32}"
                         form={FORM_ID}
-                        className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                        className="w-28 px-2 py-1"
                       />
-                      <input
+                      <TextInput
                         name={`displayName_${u.id}`}
                         defaultValue={u.displayName}
                         form={FORM_ID}
-                        className="w-28 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                        className="w-28 px-2 py-1"
                       />
-                      <select
-                        name={`role_${u.id}`}
-                        defaultValue={u.role}
-                        form={FORM_ID}
-                        className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-                      >
+                      <Select name={`role_${u.id}`} defaultValue={u.role} form={FORM_ID} className="px-2 py-1">
                         <option value="STAFF">一般</option>
                         <option value="ADMIN">管理者</option>
-                      </select>
-                      <input
+                      </Select>
+                      <TextInput
                         name={`password_${u.id}`}
                         type="text"
                         placeholder="変更する場合のみ入力"
                         minLength={8}
                         form={FORM_ID}
-                        className="w-40 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                        className="w-40 px-2 py-1"
                       />
                       <span className="flex flex-wrap gap-2">
                         {departments.map((d) => (
@@ -210,16 +185,12 @@ export default async function AccountsPage({
                       <form action={toggleAccountActive}>
                         <input type="hidden" name="id" value={u.id} />
                         <input type="hidden" name="nextActive" value={(!u.isActive).toString()} />
-                        <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
-                          {u.isActive ? "無効化" : "有効化"}
-                        </button>
+                        <ActionButton>{u.isActive ? "無効化" : "有効化"}</ActionButton>
                       </form>
                       {deletable && (
                         <form action={deleteAccount}>
                           <input type="hidden" name="id" value={u.id} />
-                          <button className="text-xs text-red-600 underline dark:text-red-400">
-                            削除
-                          </button>
+                          <ActionButton tone="red">削除</ActionButton>
                         </form>
                       )}
                     </div>

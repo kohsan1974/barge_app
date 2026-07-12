@@ -4,7 +4,10 @@ import type { NextAuthConfig } from "next-auth";
 // Credentials providerの実装(DBアクセスを伴う)はauth.tsで追加する。
 export const authConfig: NextAuthConfig = {
   pages: { signIn: "/login" },
-  session: { strategy: "jwt" },
+  // セッションは90日保持（使うたびに期限が延長されるスライド方式のため、90日以内に
+  // 一度でもアプリを開けば再ログイン不要）。無効化・降格されたアカウントはセッションが
+  // 残っていてもDB側の二重防御（requireAdmin等）で即時に操作を拒否されるため、長めでも安全
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 90 },
   trustHost: true,
   providers: [],
   callbacks: {

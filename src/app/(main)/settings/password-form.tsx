@@ -2,6 +2,7 @@
 
 import { useActionState, useRef } from "react";
 import { changePassword, type ChangePasswordState } from "@/lib/actions/change-password";
+import { FieldLabel, PrimaryButton, TextInput } from "@/components/ui";
 
 const initialState: ChangePasswordState = { error: null };
 
@@ -23,35 +24,35 @@ export function PasswordForm() {
       className="space-y-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">現在のパスワード</label>
-        <input
+        <FieldLabel>現在のパスワード</FieldLabel>
+        <TextInput
           type="password"
           name="currentPassword"
           required
           autoComplete="current-password"
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         />
       </div>
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">新しいパスワード（8文字以上）</label>
-        <input
+        <FieldLabel>新しいパスワード（8文字以上）</FieldLabel>
+        <TextInput
           type="password"
           name="newPassword"
           required
           minLength={8}
           autoComplete="new-password"
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         />
       </div>
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">新しいパスワード（確認）</label>
-        <input
+        <FieldLabel>新しいパスワード（確認）</FieldLabel>
+        <TextInput
           type="password"
           name="confirmPassword"
           required
           minLength={8}
           autoComplete="new-password"
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         />
       </div>
 
@@ -66,13 +67,9 @@ export function PasswordForm() {
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
-      >
+      <PrimaryButton type="submit" disabled={pending} className="w-full py-2 font-medium">
         {pending ? "変更中..." : "パスワードを変更する"}
-      </button>
+      </PrimaryButton>
     </form>
   );
 }

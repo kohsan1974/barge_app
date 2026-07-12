@@ -9,6 +9,7 @@ import { cleanseSiteName } from "@/lib/cleansing";
 import { isUniqueViolation, withDbRetry } from "@/lib/db-utils";
 import { toCenti, fromCenti } from "@/lib/quantity";
 import { validateBusinessDate } from "@/lib/business-date";
+import { vesselLabel } from "@/lib/labels";
 
 export type RecordTransactionState = {
   error: string | null;
@@ -109,7 +110,7 @@ async function resolveTarget(
   }
   return {
     target: {
-      label: vessel.barge ? `${vessel.barge.name}-${vessel.name}` : vessel.name,
+      label: vesselLabel(vessel),
       members: [
         {
           id: ref,
@@ -349,7 +350,9 @@ export async function recordTransaction(
   const businessDate = dateCheck.date;
 
   try {
-    // Neonのコールドスタート（朝一の接続失敗）対策。開始前の失敗のみ安全に再試行される
+    // Neonのコールドスタート（朝一の接続失敗）対策。開始前の失敗のみ安全に再試行される。
+    // グループ（総量のみ表示バージ）のシフトは最大十数行のINSERTになり、Neonの遅延次第で
+    // 既定の5秒を超え得るため、タイムアウトに余裕を持たせる
     await withDbRetry(() =>
       prisma.$transaction(async (tx) => {
         if (operation === "SHIFT" && sourceTarget) {
@@ -470,7 +473,7 @@ export async function recordTransaction(
         for (const m of locked) {
           await tx.vessel.update({ where: { id: m.id }, data: { currentBalance: fromCenti(m.balanceCenti) } });
         }
-      }),
+      }, { timeout: 15000 }),
     );
   } catch (e) {
     return { error: e instanceof Error ? e.message : "記録に失敗しました" };

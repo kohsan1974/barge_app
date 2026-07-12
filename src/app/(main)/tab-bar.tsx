@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const tabs = [
   {
@@ -38,13 +38,16 @@ const tabs = [
 
 export function TabBar() {
   const pathname = usePathname();
-  // クリック直後に即座にハイライトを切り替え、ナビゲーション完了(pathname更新)を待たない
+  // クリック直後に即座にハイライトを切り替え、ナビゲーション完了(pathname更新)を待たない。
+  // ナビ完了時のリセットはuseEffectではなく「レンダー中の状態調整」パターンで行う
+  // （effect内setStateはカスケード再レンダーを招くためlintで禁止されている）
   const [optimisticHref, setOptimisticHref] = useState<string | null>(null);
-  const activeHref = optimisticHref ?? pathname;
-
-  useEffect(() => {
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
     setOptimisticHref(null);
-  }, [pathname]);
+  }
+  const activeHref = optimisticHref ?? pathname;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-200 bg-white pb-[env(safe-area-inset-bottom)] dark:border-zinc-800 dark:bg-zinc-900">

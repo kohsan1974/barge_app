@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createDepartment, saveDepartments, toggleDepartmentActive } from "@/lib/actions/departments";
 import { StickySaveButton } from "@/components/sticky-save-button";
+import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 const FORM_ID = "departments-form";
 
@@ -23,26 +24,17 @@ export default async function DepartmentsPage() {
           className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">部署名</label>
-            <input
-              name="name"
-              required
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            />
+            <FieldLabel>部署名</FieldLabel>
+            <TextInput name="name" required className="py-1.5" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">種別</label>
-            <select
-              name="type"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-            >
+            <FieldLabel>種別</FieldLabel>
+            <Select name="type" className="py-1.5">
               <option value="TRANSPORT">運搬部署</option>
               <option value="PROCESSING">処理部署</option>
-            </select>
+            </Select>
           </div>
-          <button className="rounded bg-zinc-900 px-4 py-1.5 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
-            追加
-          </button>
+          <PrimaryButton>追加</PrimaryButton>
         </form>
       </div>
 
@@ -66,21 +58,16 @@ export default async function DepartmentsPage() {
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <input type="hidden" name="departmentIds" value={d.id} form={FORM_ID} />
-                    <input
+                    <TextInput
                       name={`name_${d.id}`}
                       defaultValue={d.name}
                       form={FORM_ID}
-                      className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      className="px-2 py-1"
                     />
-                    <select
-                      name={`type_${d.id}`}
-                      defaultValue={d.type}
-                      form={FORM_ID}
-                      className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-                    >
+                    <Select name={`type_${d.id}`} defaultValue={d.type} form={FORM_ID} className="px-2 py-1">
                       <option value="TRANSPORT">運搬部署</option>
                       <option value="PROCESSING">処理部署</option>
-                    </select>
+                    </Select>
                   </div>
                 </td>
                 <td className="px-4 py-2 text-zinc-500">{typeLabel[d.type]}</td>
@@ -95,9 +82,7 @@ export default async function DepartmentsPage() {
                   <form action={toggleDepartmentActive}>
                     <input type="hidden" name="id" value={d.id} />
                     <input type="hidden" name="nextActive" value={(!d.isActive).toString()} />
-                    <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
-                      {d.isActive ? "無効化" : "有効化"}
-                    </button>
+                    <ActionButton>{d.isActive ? "無効化" : "有効化"}</ActionButton>
                   </form>
                 </td>
               </tr>

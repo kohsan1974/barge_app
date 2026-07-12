@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/require-admin";
 import { cleanseSiteName } from "@/lib/cleansing";
 import { isUniqueViolation, withDbRetry } from "@/lib/db-utils";
@@ -12,20 +13,23 @@ function getDepartmentIds(formData: FormData): string[] {
 }
 
 // 現場の所属部署を差し替える。運用上のルーティング設定に過ぎず（法的証跡は
-// TankTransaction.departmentId に記録時点で直接残る）、履歴を残す必要がないため単純に張り替える
-async function syncSiteDepartments(siteId: string, departmentIds: string[]) {
-  await prisma.$transaction([
-    prisma.siteDepartment.deleteMany({
-      where: { siteId, departmentId: { notIn: departmentIds } },
-    }),
-    ...departmentIds.map((departmentId) =>
-      prisma.siteDepartment.upsert({
-        where: { siteId_departmentId: { siteId, departmentId } },
-        update: {},
-        create: { siteId, departmentId },
-      }),
-    ),
-  ]);
+// TankTransaction.departmentId に記録時点で直接残る）、履歴を残す必要がないため単純に張り替える。
+// 呼び出し側のトランザクション（tx）内で使えるよう、クライアントを引数で受け取る
+async function syncSiteDepartments(
+  db: Prisma.TransactionClient,
+  siteId: string,
+  departmentIds: string[],
+) {
+  await db.siteDepartment.deleteMany({
+    where: { siteId, departmentId: { notIn: departmentIds } },
+  });
+  for (const departmentId of departmentIds) {
+    await db.siteDepartment.upsert({
+      where: { siteId_departmentId: { siteId, departmentId } },
+      update: {},
+      create: { siteId, departmentId },
+    });
+  }
 }
 
 export async function createSite(formData: FormData) {
@@ -34,36 +38,55 @@ export async function createSite(formData: FormData) {
   const departmentIds = getDepartmentIds(formData);
   if (!name || departmentIds.length === 0) redirect("/admin/sites?error=no_department");
 
-  let siteId: string;
   try {
-    const site = await prisma.site.create({ data: { name } });
-    siteId = site.id;
+    // 現場の作成と部署リンクをひとつのトランザクションにまとめる（リンクだけ失敗して
+    // 部署なし現場が残る中途半端な状態を防ぐ）
+    await withDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const site = await tx.site.create({ data: { name } });
+        await syncSiteDepartments(tx, site.id, departmentIds);
+      }),
+    );
   } catch (e) {
     if (isUniqueViolation(e)) redirect("/admin/sites?error=duplicate_site");
     throw e;
   }
-  await syncSiteDepartments(siteId, departmentIds);
   revalidatePath("/admin/sites");
   revalidatePath("/record");
 }
 
-// 現場一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する
+// 現場一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する。
+// 先に全行を検証してから1つのトランザクションで書き込み、途中エラーで
+// 「一部の行だけ保存された」中途半端な状態にならないようにする（全or無）
 export async function saveSites(formData: FormData) {
   await requireAdmin();
   const siteIds = formData.getAll("siteIds").map(String).filter(Boolean);
 
-  for (const id of siteIds) {
-    const name = cleanseSiteName(String(formData.get(`siteName_${id}`) ?? ""));
-    const departmentIds = formData.getAll(`siteDepartmentIds_${id}`).map(String).filter(Boolean);
-    if (!name || departmentIds.length === 0) redirect("/admin/sites?error=no_department");
+  const updates = siteIds.map((id) => ({
+    id,
+    name: cleanseSiteName(String(formData.get(`siteName_${id}`) ?? "")),
+    departmentIds: formData.getAll(`siteDepartmentIds_${id}`).map(String).filter(Boolean),
+  }));
+  for (const u of updates) {
+    if (!u.name || u.departmentIds.length === 0) redirect("/admin/sites?error=no_department");
+  }
 
-    try {
-      await prisma.site.update({ where: { id }, data: { name } });
-    } catch (e) {
-      if (isUniqueViolation(e)) redirect("/admin/sites?error=duplicate_site");
-      throw e;
-    }
-    await syncSiteDepartments(id, departmentIds);
+  try {
+    // 現場数×部署リンク数ぶんの往復が発生するため、既定5秒より長いタイムアウトを確保する
+    await withDbRetry(() =>
+      prisma.$transaction(
+        async (tx) => {
+          for (const u of updates) {
+            await tx.site.update({ where: { id: u.id }, data: { name: u.name } });
+            await syncSiteDepartments(tx, u.id, u.departmentIds);
+          }
+        },
+        { timeout: 30000 },
+      ),
+    );
+  } catch (e) {
+    if (isUniqueViolation(e)) redirect("/admin/sites?error=duplicate_site");
+    throw e;
   }
   revalidatePath("/admin/sites");
   revalidatePath("/record");

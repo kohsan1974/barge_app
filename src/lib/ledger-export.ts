@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { vesselLabel } from "@/lib/labels";
 
 export const LEDGER_HEADER = [
   "ID",
@@ -23,6 +24,8 @@ export const LEDGER_HEADER = [
   "訂正対象ID",
 ];
 
+// ※画面表示用のTRANSACTION_TYPE_LABELS（labels.ts）とは独立に保つ。
+//   ここを変えると過去に提出済みのCSVと再出力の内容が食い違う（CALIBRATION=「残量調整」は既提出の表記）
 const TYPE_LABEL: Record<string, string> = {
   RECEIVE: "搬入",
   PROCESS: "処理",
@@ -62,7 +65,7 @@ export async function buildLedgerRows(filter: LedgerFilter): Promise<string[][]>
     t.businessDate.toISOString().slice(0, 10),
     t.createdAt.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }),
     TYPE_LABEL[t.transactionType] ?? t.transactionType,
-    t.vessel.barge ? `${t.vessel.barge.name}-${t.vessel.name}` : t.vessel.name,
+    vesselLabel(t.vessel),
     t.itemType?.name ?? "",
     Number(t.quantity).toFixed(2),
     Number(t.balanceAfter).toFixed(2),

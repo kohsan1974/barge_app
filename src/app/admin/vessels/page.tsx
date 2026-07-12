@@ -10,6 +10,7 @@ import {
 import { createTruck, updateTruck, toggleTruckActive, deleteTruck } from "@/lib/actions/trucks";
 import type { Department, ItemType, Truck, Vessel, VesselItemType } from "@/generated/prisma/client";
 import { StickySaveButton } from "@/components/sticky-save-button";
+import { ActionButton, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 // 全バージ・全タンクの一括保存フォームのid。フィールドはform属性でここに紐づけ、
 // 画面右下の共通「変更を保存」ボタン1つでページ全体をまとめて送信する
@@ -47,12 +48,12 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
       <input type="hidden" name="vesselId" value={vessel.id} form={FORM_ID} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="flex items-center gap-1 text-sm">
-          <input
+          <TextInput
             name={`vesselName_${vessel.id}`}
             defaultValue={vessel.name}
             required
             form={FORM_ID}
-            className="w-14 rounded border border-zinc-300 px-2 py-0.5 text-center text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-14 px-2 py-0.5 text-center"
           />
           <span className="text-zinc-600 dark:text-zinc-300">タンク</span>
         </span>
@@ -67,7 +68,7 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
         </label>
         <label className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
           最大容量
-          <input
+          <TextInput
             name={`vesselMaxCapacity_${vessel.id}`}
             type="number"
             step="0.1"
@@ -75,7 +76,7 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
             required
             defaultValue={Number(vessel.maxCapacity)}
             form={FORM_ID}
-            className="w-20 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-20 px-2 py-0.5"
           />
           kL
         </label>
@@ -84,13 +85,13 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
           <span className="text-xs text-zinc-400">廃止済み</span>
         )}
         {deletable ? (
-          <button form={`tank-del-${vessel.id}`} className="text-xs text-red-600 underline dark:text-red-400">
+          <ActionButton form={`tank-del-${vessel.id}`} tone="red">
             削除
-          </button>
+          </ActionButton>
         ) : (
-          <button form={`tank-status-${vessel.id}`} className="text-xs text-zinc-500 underline dark:text-zinc-400">
+          <ActionButton form={`tank-status-${vessel.id}`}>
             {vessel.status === "ACTIVE" ? "廃止する" : "再稼働する"}
-          </button>
+          </ActionButton>
         )}
       </div>
 
@@ -158,16 +159,16 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
             </button>
           </span>
         ))}
-        <input
+        <TextInput
           form={`content-add-${vessel.id}`}
           name="contentName"
           required
           placeholder="内容物"
-          className="w-28 rounded border border-zinc-300 px-2 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-28 px-2 py-0.5 text-xs"
         />
-        <button form={`content-add-${vessel.id}`} className="text-xs text-blue-600 underline dark:text-blue-400">
+        <ActionButton form={`content-add-${vessel.id}`} tone="blue">
           追加
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -213,20 +214,20 @@ function TankAddForm({ bargeId, departments }: { bargeId: string | null; departm
       className="flex flex-wrap items-center gap-2 border-t border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-2 dark:border-zinc-700 dark:bg-zinc-800/40"
     >
       {bargeId && <input type="hidden" name="bargeId" value={bargeId} />}
-      <input
+      <TextInput
         name="name"
         required
         placeholder="番号"
-        className="w-16 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+        className="w-16 px-2 py-0.5"
       />
-      <input
+      <TextInput
         name="maxCapacity"
         type="number"
         step="0.1"
         min="0.1"
         required
         placeholder="最大容量(kL)"
-        className="w-32 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+        className="w-32 px-2 py-0.5"
       />
       <fieldset className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
         <legend className="sr-only">所属部署（未選択のタンクはどの部署からも選択できません）</legend>
@@ -237,9 +238,9 @@ function TankAddForm({ bargeId, departments }: { bargeId: string | null; departm
           </label>
         ))}
       </fieldset>
-      <button className="rounded bg-zinc-900 px-3 py-1 text-xs text-white dark:bg-zinc-50 dark:text-zinc-900">
+      <PrimaryButton className="px-3 py-1 text-xs">
         タンク追加
-      </button>
+      </PrimaryButton>
     </form>
   );
 }
@@ -251,25 +252,25 @@ function TruckRow({ truck, departments }: { truck: Truck & { _count: { transacti
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-100 px-4 py-2 dark:border-zinc-800">
       <form action={updateTruck} className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="id" value={truck.id} />
-        <input
+        <TextInput
           name="name"
           defaultValue={truck.name}
           required
-          className="w-32 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-32 px-2 py-0.5"
         />
-        <select
+        <Select
           name="departmentId"
           defaultValue={truck.departmentId}
           required
-          className="rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="px-2 py-0.5"
         >
           {departments.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
             </option>
           ))}
-        </select>
-        <button className="text-xs text-blue-600 underline dark:text-blue-400">保存</button>
+        </Select>
+        <ActionButton tone="blue">保存</ActionButton>
       </form>
       {truck.isActive ? (
         <span className="text-xs text-green-700 dark:text-green-400">有効</span>
@@ -279,14 +280,14 @@ function TruckRow({ truck, departments }: { truck: Truck & { _count: { transacti
       <form action={toggleTruckActive}>
         <input type="hidden" name="id" value={truck.id} />
         <input type="hidden" name="nextActive" value={(!truck.isActive).toString()} />
-        <button className="text-xs text-zinc-500 underline dark:text-zinc-400">
+        <ActionButton >
           {truck.isActive ? "無効化" : "有効化"}
-        </button>
+        </ActionButton>
       </form>
       {deletable && (
         <form action={deleteTruck}>
           <input type="hidden" name="id" value={truck.id} />
-          <button className="text-xs text-red-600 underline dark:text-red-400">削除</button>
+          <ActionButton tone="red">削除</ActionButton>
         </form>
       )}
     </div>
@@ -349,15 +350,15 @@ export default async function VesselsPage({
           action={createBarge}
           className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <input
+          <TextInput
             name="name"
             required
             placeholder="バージ名"
-            className="rounded border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="px-3 py-1"
           />
-          <button className="rounded bg-zinc-900 px-4 py-1 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
+          <PrimaryButton className="py-1">
             バージ追加
-          </button>
+          </PrimaryButton>
         </form>
       </div>
 
@@ -396,12 +397,12 @@ export default async function VesselsPage({
                   <input type="hidden" name="bargeIds" value={barge.id} form={FORM_ID} />
                   <div className="border-t border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-800">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <input
+                      <TextInput
                         name={`bargeName_${barge.id}`}
                         defaultValue={barge.name}
                         required
                         form={FORM_ID}
-                        className="w-36 rounded border border-zinc-300 px-2 py-0.5 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                        className="w-36 px-2 py-0.5 font-medium dark:bg-zinc-900"
                       />
                       <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
                         <input
@@ -419,15 +420,12 @@ export default async function VesselsPage({
                       ) : (
                         <span className="text-zinc-400">廃止済み（残量一覧・記録に表示されません）</span>
                       )}
-                      <button
-                        form={`barge-status-${barge.id}`}
-                        className="text-zinc-500 underline dark:text-zinc-400"
-                      >
+                      <ActionButton form={`barge-status-${barge.id}`} className="text-xs">
                         {barge.status === "ACTIVE" ? "廃止する" : "再稼働する"}
-                      </button>
-                      <button form={`barge-del-${barge.id}`} className="text-red-600 underline dark:text-red-400">
+                      </ActionButton>
+                      <ActionButton form={`barge-del-${barge.id}`} tone="red" className="text-xs">
                         削除
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                   {barge.vessels.length === 0 && (
@@ -514,17 +512,17 @@ export default async function VesselsPage({
             action={createTruck}
             className="flex flex-wrap items-center gap-2 border-t border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-2 dark:border-zinc-700 dark:bg-zinc-800/40"
           >
-            <input
+            <TextInput
               name="name"
               required
               placeholder="トラック名"
-              className="w-32 rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="w-32 px-2 py-0.5"
             />
-            <select
+            <Select
               name="departmentId"
               required
               defaultValue=""
-              className="rounded border border-zinc-300 px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="px-2 py-0.5"
             >
               <option value="" disabled>
                 所属部署を選択
@@ -534,10 +532,10 @@ export default async function VesselsPage({
                   {d.name}
                 </option>
               ))}
-            </select>
-            <button className="rounded bg-zinc-900 px-3 py-1 text-xs text-white dark:bg-zinc-50 dark:text-zinc-900">
+            </Select>
+            <PrimaryButton className="px-3 py-1 text-xs">
               トラック追加
-            </button>
+            </PrimaryButton>
           </form>
         </details>
       </section>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { isActiveAdmin } from "@/lib/require-admin";
 
 const navItems = [
   { href: "/admin/accounts", label: "アカウント管理" },
@@ -19,11 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!userId) redirect("/login");
 
   // JWTのroleではなくDBの現在値で判定する（無効化・降格が即座に反映されるように）
-  const me = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true, isActive: true },
-  });
-  if (!me?.isActive || me.role !== "ADMIN") {
+  if (!(await isActiveAdmin(userId))) {
     redirect("/");
   }
 

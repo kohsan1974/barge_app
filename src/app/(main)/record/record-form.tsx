@@ -3,6 +3,8 @@
 import { useActionState, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordTransaction, type RecordTransactionState } from "@/lib/actions/record-transaction";
+import { todayLocalDate } from "@/lib/business-date";
+import { FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 type Department = { id: string; name: string; type: string };
 type SiteShipOption = { id: string; name: string };
@@ -136,11 +138,8 @@ export function RecordForm({
     initialState,
   );
 
-  // toISOString()はUTC基準のため、日本時間の午前0時〜9時に「前日」が初期値になる。端末のローカル日付を使う
-  const [businessDate] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  });
+  // 業務日の初期値は端末のローカル日付（実装と理由はtodayLocalDate参照）
+  const [businessDate] = useState(todayLocalDate);
 
   // 現場は複数部署で共用され得るため候補は全現場から探すが、選択中の部署と同じ種別（ステータス）の
   // 現場だけに絞り込み、その上で今の部署がすでに使っている現場を優先表示する
@@ -208,20 +207,20 @@ export function RecordForm({
       className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">部署（ステータス）</label>
+        <FieldLabel>部署（ステータス）</FieldLabel>
         {departments.length > 1 ? (
-          <select
+          <Select
             name="departmentId"
             value={departmentId}
             onChange={(e) => setDepartmentId(e.target.value)}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full"
           >
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}（{d.type === "TRANSPORT" ? "運搬" : "処理"}）
               </option>
             ))}
-          </select>
+          </Select>
         ) : (
           <>
             <input type="hidden" name="departmentId" value={departmentId} />
@@ -233,7 +232,7 @@ export function RecordForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">作業内容</label>
+        <FieldLabel>作業内容</FieldLabel>
         {operations.length > 1 ? (
           <div className="flex flex-wrap gap-2">
             {operations.map((op) => (
@@ -268,21 +267,21 @@ export function RecordForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">業務日</label>
-        <input
+        <FieldLabel>業務日</FieldLabel>
+        <TextInput
           type="date"
           name="businessDate"
           defaultValue={businessDate}
           required
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         />
       </div>
 
       {showSiteField && (
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">{siteFieldLabel}</label>
+          <FieldLabel>{siteFieldLabel}</FieldLabel>
           <div className="relative">
-            <input
+            <TextInput
               name="siteName"
               value={siteQuery}
               onChange={(e) => setSiteQuery(e.target.value)}
@@ -291,7 +290,7 @@ export function RecordForm({
               required
               autoComplete="off"
               placeholder={`${siteFieldLabel}名を入力（候補から選択もできます）`}
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="w-full"
             />
             {siteFocused && siteSuggestions.length > 0 && (
               <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
@@ -324,15 +323,15 @@ export function RecordForm({
 
       {isReceiveOp && (
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">
+          <FieldLabel>
             本船名（現場マスタに登録されている本船のみ表示）
-          </label>
-          <select
+          </FieldLabel>
+          <Select
             name="shipId"
             value={shipId}
             onChange={(e) => setShipId(e.target.value)}
             disabled={!matchedSite}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full disabled:opacity-50"
           >
             <option value="">なし（陸の施設など）</option>
             {siteShips.map((s) => (
@@ -340,7 +339,7 @@ export function RecordForm({
                 {s.name}
               </option>
             ))}
-          </select>
+          </Select>
           {!matchedSite && (
             <p className="mt-1 text-xs text-zinc-400">
               現場を確定すると、その現場に登録された本船を選べます
@@ -351,39 +350,39 @@ export function RecordForm({
 
       {isReceiveOp && departmentTrucks.length > 0 && (
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">トラック</label>
-          <select
+          <FieldLabel>トラック</FieldLabel>
+          <Select
             name="truckId"
             value={truckId}
             onChange={(e) => setTruckId(e.target.value)}
             required
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full"
           >
             {departmentTrucks.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
 
       {isShiftOp && (
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">移動元タンク</label>
-          <select
+          <FieldLabel>移動元タンク</FieldLabel>
+          <Select
             name="sourceVesselId"
             value={sourceVesselId}
             onChange={(e) => setSourceVesselId(e.target.value)}
             required
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full"
           >
             {sourceCandidates.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
               </option>
             ))}
-          </select>
+          </Select>
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
             移動元の残量を減らし、移動先の残量を増やします
           </p>
@@ -391,26 +390,26 @@ export function RecordForm({
       )}
 
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">
+        <FieldLabel>
           {isShiftOp ? "移動先タンク" : isOutOp ? "対象タンク" : "受入れタンク"}
-        </label>
-        <select
+        </FieldLabel>
+        <Select
           name="vesselId"
           value={vesselId}
           onChange={(e) => handleVesselChange(e.target.value)}
           required
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         >
           {vesselCandidates.map((v) => (
             <option key={v.id} value={v.id}>
               {v.name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <div>
-        <label className="mb-2 block text-xs text-zinc-500">内容物・数量</label>
+        <FieldLabel className="mb-2">内容物・数量</FieldLabel>
         {noContents ? (
           <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
             このタンクには内容物が登録されていません。管理者にタンクマスタでの内容物登録を依頼してください
@@ -418,21 +417,28 @@ export function RecordForm({
         ) : (
           <>
             <div className="space-y-2">
-              {items.map((item, index) => (
+              {items.map((item, index) => {
+                // 部署・作業内容・タンクの切り替えで選択中の品目が候補から外れた場合、
+                // レンダー中に先頭の品目へフォールバックする（そのままだと空値が送信され
+                // 「品目を選択してください」という分かりにくいエラーになる）
+                const itemTypeId = availableContents.some((c) => c.id === item.itemTypeId)
+                  ? item.itemTypeId
+                  : (availableContents[0]?.id ?? "");
+                return (
                 <div key={index} className="flex items-center gap-2">
-                  <select
+                  <Select
                     name="itemTypeId"
-                    value={item.itemTypeId}
+                    value={itemTypeId}
                     onChange={(e) => updateItem(index, { itemTypeId: e.target.value })}
-                    className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                    className="flex-1"
                   >
                     {availableContents.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
                     ))}
-                  </select>
-                  <input
+                  </Select>
+                  <TextInput
                     type="number"
                     name="quantity"
                     step="0.1"
@@ -441,7 +447,7 @@ export function RecordForm({
                     value={item.quantity}
                     onChange={(e) => updateItem(index, { quantity: e.target.value })}
                     placeholder="数量 (kL)"
-                    className="w-40 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                    className="w-40"
                   />
                   {items.length > 1 && (
                     <button
@@ -453,7 +459,8 @@ export function RecordForm({
                     </button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             <button
               type="button"
@@ -477,13 +484,9 @@ export function RecordForm({
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending || noContents}
-        className="w-full rounded bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
-      >
+      <PrimaryButton type="submit" disabled={pending || noContents} className="w-full py-2 font-medium">
         {pending ? "記録中..." : `${OPERATION_LABELS[operation]}を記録する`}
-      </button>
+      </PrimaryButton>
     </form>
   );
 }

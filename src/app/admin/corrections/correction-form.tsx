@@ -2,16 +2,15 @@
 
 import { useActionState, useState } from "react";
 import { createCorrection, type CorrectionState } from "@/lib/actions/corrections";
+import { todayLocalDate } from "@/lib/business-date";
+import { FieldLabel, TextInput } from "@/components/ui";
 
 const initialState: CorrectionState = { error: null };
 
 export function CorrectionForm({ targetId }: { targetId: string }) {
   const [state, formAction, pending] = useActionState(createCorrection, initialState);
-  // toISOString()はUTC基準で日本の深夜〜午前9時に前日になるため、端末のローカル日付を使う
-  const [businessDate] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  });
+  // 業務日の初期値は端末のローカル日付（実装と理由はtodayLocalDate参照）
+  const [businessDate] = useState(todayLocalDate);
 
   if (state.success) {
     return (
@@ -25,22 +24,16 @@ export function CorrectionForm({ targetId }: { targetId: string }) {
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="targetId" value={targetId} />
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">訂正日（業務日）</label>
-        <input
-          type="date"
-          name="businessDate"
-          defaultValue={businessDate}
-          required
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
-        />
+        <FieldLabel>訂正日（業務日）</FieldLabel>
+        <TextInput type="date" name="businessDate" defaultValue={businessDate} required />
       </div>
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">訂正理由（必須・監査記録に残ります）</label>
-        <input
+        <FieldLabel>訂正理由（必須・監査記録に残ります）</FieldLabel>
+        <TextInput
           name="reason"
           required
           placeholder="例：数量の入力誤り（正しくは12.5kL）"
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          className="w-full"
         />
       </div>
       {state.error && (
@@ -48,6 +41,7 @@ export function CorrectionForm({ targetId }: { targetId: string }) {
           {state.error}
         </p>
       )}
+      {/* 台帳を打ち消す操作のため、通常の主ボタンではなく赤で警告する */}
       <button
         type="submit"
         disabled={pending}

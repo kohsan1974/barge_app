@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { TRANSACTION_TYPE_LABELS, vesselLabel } from "@/lib/labels";
 import { CorrectionForm } from "./correction-form";
-
-const typeLabel: Record<string, string> = {
-  RECEIVE: "搬入",
-  PROCESS: "処理",
-  CALIBRATION: "調整",
-  CORRECTION: "訂正",
-};
 
 // 誤記録の訂正（逆仕訳）。台帳は追記専用のため、元の行を消すのではなく
 // 打ち消し行を追加して相殺する。対象を選ぶ一覧と、選択後の確認画面を兼ねる
@@ -56,16 +50,13 @@ export default async function CorrectionsPage({
             <div className="flex gap-2">
               <dt className="w-20 shrink-0 text-zinc-400">種別・日付</dt>
               <dd>
-                {typeLabel[target.transactionType]} ／ {target.businessDate.toISOString().slice(0, 10)}
+                {TRANSACTION_TYPE_LABELS[target.transactionType]} ／{" "}
+                {target.businessDate.toISOString().slice(0, 10)}
               </dd>
             </div>
             <div className="flex gap-2">
               <dt className="w-20 shrink-0 text-zinc-400">タンク</dt>
-              <dd>
-                {target.vessel.barge
-                  ? `${target.vessel.barge.name}-${target.vessel.name}`
-                  : target.vessel.name}
-              </dd>
+              <dd>{vesselLabel(target.vessel)}</dd>
             </div>
             <div className="flex gap-2">
               <dt className="w-20 shrink-0 text-zinc-400">内容物・数量</dt>
@@ -164,10 +155,10 @@ export default async function CorrectionsPage({
                       {t.businessDate.toISOString().slice(0, 10)}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-400">
-                      {typeLabel[t.transactionType]}
+                      {TRANSACTION_TYPE_LABELS[t.transactionType]}
                     </td>
                     <td className="px-3 py-2 text-zinc-900 dark:text-zinc-50">
-                      {t.vessel.barge ? `${t.vessel.barge.name}-${t.vessel.name}` : t.vessel.name}
+                      {vesselLabel(t.vessel)}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-zinc-600 dark:text-zinc-400">
                       {t.itemType?.name ?? "—"} {quantity > 0 ? "+" : ""}

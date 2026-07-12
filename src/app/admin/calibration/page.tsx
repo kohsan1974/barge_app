@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { vesselLabel } from "@/lib/labels";
 import { CalibrationForm } from "./calibration-form";
 
 export default async function CalibrationPage() {
@@ -19,7 +20,7 @@ export default async function CalibrationPage() {
   const vesselOptions = vessels
     .map((v) => ({
       id: v.id,
-      name: v.barge ? `${v.barge.name}-${v.name}` : v.name,
+      name: vesselLabel(v),
       currentBalance: Number(v.currentBalance),
       maxCapacity: Number(v.maxCapacity),
     }))
@@ -51,7 +52,7 @@ export default async function CalibrationPage() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                    {c.vessel.barge ? `${c.vessel.barge.name}-${c.vessel.name}` : c.vessel.name}
+                    {vesselLabel(c.vessel)}
                   </span>
                   <span className="shrink-0 text-xs text-zinc-400">
                     {c.businessDate.toISOString().slice(0, 10)}
