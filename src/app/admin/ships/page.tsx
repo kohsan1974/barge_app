@@ -87,11 +87,7 @@ export default async function ShipsPage({
         </form>
       </div>
 
-      {/* 名前・IMO番号の一括保存フォーム本体。フィールドはform属性でここに紐づく
-          （現場の割り当てはチップUIで即時保存されるため一括保存の対象外） */}
-      <form id={FORM_ID} action={saveShips} />
-
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
@@ -204,7 +200,9 @@ export default async function ShipsPage({
         </table>
       </div>
 
-      <StickySaveButton formId={FORM_ID} />
+      {/* 名前・IMO番号の一括保存フォーム本体＋保存ボタン。各フィールドはform属性でここに紐づく
+          （現場の割り当てはチップUIで即時保存されるため一括保存の対象外） */}
+      <StickySaveButton formId={FORM_ID} action={saveShips} />
     </div>
   );
 }

@@ -43,3 +43,6 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 ## Failed attempts
 - ATTEMPT 1 [L1] (barge_app 保存ボタン): position:fixed→stickyへ変更 -> タップ判定は復活したがiOS本番で保存されず（送信未発火）
 - ATTEMPT 2 [L2]: 新仮説=iOS WebKitはform属性の外部submitterクリックで送信を発火しない -> クリック時にform.requestSubmit()を直接呼ぶ
+- ATTEMPT 3 [L3] 解決: 保存ボタンを本物の<form>の内側に入れ、ネイティブtype=submitで送信。
+  Playwrightで実証: JS有効=保存OK / **JS無効=保存OK**（iOSの怪しい送信経路もJSも非依存）/ iPhone幅390pxで5画面すべて横オーバーフロー0px。
+  あわせて管理画面をスマホ縦積みレイアウト（メニューは上部横スクロールチップ、表はoverflow-x-auto）に変更。

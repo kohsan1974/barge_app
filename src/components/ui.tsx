@@ -1,7 +1,10 @@
+"use client";
+
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   LabelHTMLAttributes,
+  MouseEvent,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
@@ -12,7 +15,19 @@ import { twMerge } from "tailwind-merge";
 // スタイル変更を1箇所で済むようにする。
 // classNameはtailwind-mergeで後勝ちマージされるため、呼び出し側は
 // 幅（w-20等）やパディング（py-1等）だけを上書きすればよい。
-// フックを使わないためServer Componentからもそのまま使える。
+// フックを使わないためServer Componentからもそのまま使える（クライアント境界になるだけ）。
+
+// iOS Safariはform属性でフォーム外に置いたsubmitボタンのクリックから送信を
+// 発火しないことがあるため、form属性を持つボタンはJSでrequestSubmit()を直接呼ぶ。
+// form属性なし（フォーム内の通常ボタン）は何もしない＝ネイティブ送信のまま
+function submitFormByAttr(e: MouseEvent<HTMLButtonElement>) {
+  const formId = e.currentTarget.getAttribute("form");
+  if (!formId) return;
+  const form = document.getElementById(formId);
+  if (!(form instanceof HTMLFormElement)) return;
+  e.preventDefault();
+  if (form.reportValidity()) form.requestSubmit();
+}
 
 export function FieldLabel({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
   return <label {...props} className={twMerge("mb-1 block text-xs text-zinc-500", className)} />;
@@ -55,10 +70,14 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 }
 
 // 黒背景の主ボタン（保存・追加・記録など）
-export function PrimaryButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+export function PrimaryButton({ className, onClick, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
+      onClick={(e) => {
+        onClick?.(e);
+        if (!e.defaultPrevented) submitFormByAttr(e);
+      }}
       className={twMerge(
         "rounded bg-zinc-900 px-4 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900",
         className,
@@ -77,9 +96,17 @@ const ACTION_TONES = {
 export function ActionButton({
   tone = "zinc",
   className,
+  onClick,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: keyof typeof ACTION_TONES }) {
   return (
-    <button {...props} className={twMerge(`text-xs underline ${ACTION_TONES[tone]}`, className)} />
+    <button
+      {...props}
+      onClick={(e) => {
+        onClick?.(e);
+        if (!e.defaultPrevented) submitFormByAttr(e);
+      }}
+      className={twMerge(`text-xs underline ${ACTION_TONES[tone]}`, className)}
+    />
   );
 }

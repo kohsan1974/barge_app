@@ -88,10 +88,8 @@ export default async function SitesPage({
 
       {/* 重複統合フォーム本体。行内のラジオ/チェックはform属性でここに紐づく */}
       <form id="merge-form" action={mergeSites} />
-      {/* 全現場共通の一括保存フォーム本体（現場名・所属部署編集用）。フィールドはform属性でここに紐づく */}
-      <form id={FORM_ID} action={saveSites} />
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-800">
           <p className="text-xs text-zinc-600 dark:text-zinc-400">
             かぶって登録された現場は、<span className="font-medium">残す方に「統合先」</span>・
@@ -111,6 +109,7 @@ export default async function SitesPage({
             </PrimaryButton>
           </div>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
@@ -247,9 +246,11 @@ export default async function SitesPage({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
-      <StickySaveButton formId={FORM_ID} />
+      {/* 全現場共通の一括保存フォーム本体＋保存ボタン（現場名・所属部署編集用）。フィールドはform属性でここに紐づく */}
+      <StickySaveButton formId={FORM_ID} action={saveSites} />
     </div>
   );
 }
