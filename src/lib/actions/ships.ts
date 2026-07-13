@@ -3,53 +3,140 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/require-admin";
-import { isUniqueViolation } from "@/lib/db-utils";
+import { isUniqueViolation, uniqueViolationTarget, withDbRetry } from "@/lib/db-utils";
 
-// 現場に本船を追加する。本船マスタは独立の管理画面を持たず、現場マスタの中で
-// 名前を入力すると（同名があれば再利用、なければ新規登録して）その現場に紐付ける
-export async function addSiteShip(formData: FormData) {
+// IMO番号は7桁の数字（任意入力。持たない小型船・バージは空欄でよい）
+const IMO_RE = /^\d{7}$/;
+
+// 一意制約違反（名前 or IMO番号）をエラーコードに変換する
+function duplicateErrorCode(e: unknown): string {
+  return uniqueViolationTarget(e).includes("imoNumber") ? "duplicate_imo" : "duplicate_ship";
+}
+
+// 本船と現場の紐付けを選択状態どおりに張り替える（1隻が複数現場に所属できる）。
+// 呼び出し側のトランザクション（tx）内で使えるよう、クライアントを引数で受け取る
+async function syncShipSites(db: Prisma.TransactionClient, shipId: string, siteIds: string[]) {
+  await db.siteShip.deleteMany({
+    where: { shipId, siteId: { notIn: siteIds } },
+  });
+  for (const siteId of siteIds) {
+    await db.siteShip.upsert({
+      where: { siteId_shipId: { siteId, shipId } },
+      update: {},
+      create: { siteId, shipId },
+    });
+  }
+}
+
+export async function createShip(formData: FormData) {
   await requireAdmin();
-  const siteId = String(formData.get("siteId") ?? "");
-  const name = String(formData.get("shipName") ?? "").trim();
-  if (!siteId || !name) return;
+  const name = String(formData.get("name") ?? "").trim();
+  const imoRaw = String(formData.get("imoNumber") ?? "").trim();
+  const siteIds = formData.getAll("siteIds").map(String).filter(Boolean);
+  if (!name) redirect("/admin/ships?error=invalid_ship");
+  if (imoRaw && !IMO_RE.test(imoRaw)) redirect("/admin/ships?error=invalid_imo");
 
-  let ship = await prisma.ship.findFirst({ where: { name } });
-  if (!ship) {
-    try {
-      ship = await prisma.ship.create({ data: { name } });
-    } catch (e) {
-      // 同時登録で先に同名が作られた場合(unique制約違反)は既存を使う
-      if (!isUniqueViolation(e)) throw e;
-      ship = await prisma.ship.findFirst({ where: { name } });
-      if (!ship) return;
-    }
-  } else if (!ship.isActive) {
-    ship = await prisma.ship.update({ where: { id: ship.id }, data: { isActive: true } });
+  try {
+    // 本船の作成と現場リンクをひとつのトランザクションにまとめる
+    await withDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const ship = await tx.ship.create({
+          data: { name, imoNumber: imoRaw || null },
+        });
+        await syncShipSites(tx, ship.id, siteIds);
+      }),
+    );
+  } catch (e) {
+    if (isUniqueViolation(e)) redirect(`/admin/ships?error=${duplicateErrorCode(e)}`);
+    throw e;
+  }
+  revalidatePath("/admin/ships");
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+}
+
+// 本船一覧の一括保存（名前・IMO番号）。画面右下の共通「変更を保存」ボタンから全行分をまとめて送信する。
+// 先に全行を検証してから1つのトランザクションで書き込む（全or無）。
+// 現場の割り当てはチップUI（addShipSite/removeShipSite）で即時保存するため、ここでは扱わない
+export async function saveShips(formData: FormData) {
+  await requireAdmin();
+  const shipIds = formData.getAll("shipIds").map(String).filter(Boolean);
+
+  const updates = shipIds.map((id) => ({
+    id,
+    name: String(formData.get(`shipName_${id}`) ?? "").trim(),
+    imoNumber: String(formData.get(`shipImo_${id}`) ?? "").trim(),
+  }));
+  for (const u of updates) {
+    if (!u.name) redirect("/admin/ships?error=invalid_ship");
+    if (u.imoNumber && !IMO_RE.test(u.imoNumber)) redirect("/admin/ships?error=invalid_imo");
   }
 
-  await prisma.siteShip.upsert({
-    where: { siteId_shipId: { siteId, shipId: ship.id } },
-    update: {},
-    create: { siteId, shipId: ship.id },
-  });
+  try {
+    await withDbRetry(() =>
+      prisma.$transaction(
+        updates.map((u) =>
+          prisma.ship.update({
+            where: { id: u.id },
+            data: { name: u.name, imoNumber: u.imoNumber || null },
+          }),
+        ),
+      ),
+    );
+  } catch (e) {
+    if (isUniqueViolation(e)) redirect(`/admin/ships?error=${duplicateErrorCode(e)}`);
+    throw e;
+  }
+  revalidatePath("/admin/ships");
   revalidatePath("/admin/sites");
   revalidatePath("/record");
 }
 
-// 現場からの本船の解除（本船マスタ自体は消さない。台帳の過去データが参照するため）
-export async function removeSiteShip(formData: FormData) {
+// 本船に現場を1件追加する（チップUIのプルダウンから選んで追加。即時保存）
+export async function addShipSite(formData: FormData) {
   await requireAdmin();
-  const siteId = String(formData.get("siteId") ?? "");
   const shipId = String(formData.get("shipId") ?? "");
-  if (!siteId || !shipId) return;
+  const siteId = String(formData.get("siteId") ?? "");
+  if (!shipId || !siteId) return;
 
-  await prisma.siteShip.deleteMany({ where: { siteId, shipId } });
+  await prisma.siteShip.upsert({
+    where: { siteId_shipId: { siteId, shipId } },
+    update: {},
+    create: { siteId, shipId },
+  });
+  revalidatePath("/admin/ships");
   revalidatePath("/admin/sites");
   revalidatePath("/record");
 }
 
-// 台帳から参照されていない本船のみ物理削除できる（管理者向けの後片付け用途。UIからは現状導線なし）
+// 本船から現場の割り当てを1件解除する（過去の台帳記録には影響しない運用上のルーティング設定）
+export async function removeShipSite(formData: FormData) {
+  await requireAdmin();
+  const shipId = String(formData.get("shipId") ?? "");
+  const siteId = String(formData.get("siteId") ?? "");
+  if (!shipId || !siteId) return;
+
+  await prisma.siteShip.deleteMany({ where: { shipId, siteId } });
+  revalidatePath("/admin/ships");
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+}
+
+export async function toggleShipActive(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const nextActive = formData.get("nextActive") === "true";
+  if (!id) return;
+
+  await prisma.ship.update({ where: { id }, data: { isActive: nextActive } });
+  revalidatePath("/admin/ships");
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+}
+
+// 台帳から参照されていない本船のみ物理削除できる（参照がある場合は無効化を使う）
 export async function deleteShip(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id"));
@@ -57,7 +144,7 @@ export async function deleteShip(formData: FormData) {
 
   const referenceCount = await prisma.tankTransaction.count({ where: { shipId: id } });
   if (referenceCount > 0) {
-    redirect("/admin/sites?error=has_transactions");
+    redirect("/admin/ships?error=has_transactions");
   }
 
   try {
@@ -66,9 +153,10 @@ export async function deleteShip(formData: FormData) {
       prisma.ship.delete({ where: { id } }),
     ]);
   } catch (e) {
-    if ((e as { code?: string }).code === "P2003") redirect("/admin/sites?error=has_transactions");
+    if ((e as { code?: string }).code === "P2003") redirect("/admin/ships?error=has_transactions");
     throw e;
   }
+  revalidatePath("/admin/ships");
   revalidatePath("/admin/sites");
   revalidatePath("/record");
 }

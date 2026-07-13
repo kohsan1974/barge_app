@@ -109,11 +109,13 @@ model SiteDepartment {
   @@map("site_department")
 }
 
-// 本船マスタ（受入元の船）。独立の管理画面は持たず、現場マスタの中で現場ごとに追加・割り振りする
+// 本船マスタ（受入元の船）。専用の管理画面（/admin/ships）で登録し、
+// 1隻を複数の現場に割り振れる（SiteShip多対多）
 model Ship {
-  id       String  @id @default(uuid())
-  name     String  @unique // 公的書類上の識別性を保つため同名禁止
-  isActive Boolean @default(true)
+  id        String  @id @default(uuid())
+  name      String  @unique // 公的書類上の識別性を保つため同名禁止
+  imoNumber String? @unique // IMO番号（7桁・任意）。国際的に船舶ごとに一意のため重複禁止
+  isActive  Boolean @default(true)
 
   siteLinks    SiteShip[]
   transactions TankTransaction[]

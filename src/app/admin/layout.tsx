@@ -7,6 +7,7 @@ const navItems = [
   { href: "/admin/accounts", label: "アカウント管理" },
   { href: "/admin/departments", label: "部署" },
   { href: "/admin/sites", label: "現場" },
+  { href: "/admin/ships", label: "本船" },
   { href: "/admin/vessels", label: "バージ・タンク" },
   { href: "/admin/calibration", label: "残量調整" },
   { href: "/admin/corrections", label: "記録の訂正" },

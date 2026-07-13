@@ -6,9 +6,9 @@ import {
   mergeSites,
   deleteSite,
 } from "@/lib/actions/sites";
-import { addSiteShip, removeSiteShip } from "@/lib/actions/ships";
+import { addShipSite, removeShipSite } from "@/lib/actions/ships";
 import { StickySaveButton } from "@/components/sticky-save-button";
-import { ActionButton, FieldLabel, PrimaryButton, TextInput } from "@/components/ui";
+import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
 
 const FORM_ID = "sites-form";
 
@@ -29,7 +29,7 @@ export default async function SitesPage({
   const params = await searchParams;
   const errorMessage = params.error ? errorMessages[params.error] : null;
 
-  const [sites, departments] = await Promise.all([
+  const [sites, departments, ships] = await Promise.all([
     prisma.site.findMany({
       include: {
         departmentLinks: { include: { department: true } },
@@ -38,6 +38,7 @@ export default async function SitesPage({
       },
     }),
     prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    prisma.ship.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
   // 同名・類似名の重複を見つけやすいよう、所属部署名→現場名で並べる（多対多のためJS側でソート）
@@ -61,7 +62,8 @@ export default async function SitesPage({
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
           現場名は保存時に前後の空白のみ自動的に除去されます。記録画面からの自由入力でも自動登録されます。
           一つの現場を複数部署が使う場合は、所属部署を複数選択できます。
-          本船は独立の管理画面を持たず、下の一覧で現場ごとに追加・割り振りします（記録画面では選択した現場に登録された本船のみ選べます）。
+          本船はプルダウンから選んで現場に追加できます（本船自体の新規登録・IMO番号の編集は「本船」ページ。
+          どちらのページから追加・解除しても同じ紐付けが更新されます）。
         </p>
         <form
           action={createSite}
@@ -132,6 +134,9 @@ export default async function SitesPage({
             ) : (
               sites.map((s) => {
                 const assignedIds = new Set(s.departmentLinks.map((l) => l.departmentId));
+                const assignedShipIds = new Set(s.shipLinks.map((l) => l.shipId));
+                // 追加プルダウンには未割り当ての本船だけを出す（割り当て済みはチップで表示中）
+                const unassignedShips = ships.filter((ship) => !assignedShipIds.has(ship.id));
                 return (
                   <tr key={s.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
                     <td className="px-3 py-2 text-center">
@@ -180,9 +185,9 @@ export default async function SitesPage({
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {s.shipLinks.map((link) => (
-                          <form key={link.id} action={removeSiteShip} className="inline-flex">
-                            <input type="hidden" name="siteId" value={s.id} />
+                          <form key={link.id} action={removeShipSite} className="inline-flex">
                             <input type="hidden" name="shipId" value={link.shipId} />
+                            <input type="hidden" name="siteId" value={s.id} />
                             <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-0.5 pr-1 pl-2.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                               {link.ship.name}
                               <button
@@ -194,16 +199,22 @@ export default async function SitesPage({
                             </span>
                           </form>
                         ))}
-                        <form action={addSiteShip} className="inline-flex items-center gap-1">
-                          <input type="hidden" name="siteId" value={s.id} />
-                          <TextInput
-                            name="shipName"
-                            required
-                            placeholder="本船名"
-                            className="w-24 px-2 py-0.5 text-xs"
-                          />
-                          <ActionButton tone="blue">追加</ActionButton>
-                        </form>
+                        {unassignedShips.length > 0 && (
+                          <form action={addShipSite} className="inline-flex items-center gap-1">
+                            <input type="hidden" name="siteId" value={s.id} />
+                            <Select name="shipId" required defaultValue="" className="px-2 py-0.5 text-xs">
+                              <option value="" disabled>
+                                本船を選択
+                              </option>
+                              {unassignedShips.map((ship) => (
+                                <option key={ship.id} value={ship.id}>
+                                  {ship.name}
+                                </option>
+                              ))}
+                            </Select>
+                            <ActionButton tone="blue">追加</ActionButton>
+                          </form>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-2 tabular-nums text-zinc-600 dark:text-zinc-400">
