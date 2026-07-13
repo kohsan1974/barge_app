@@ -39,3 +39,7 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 
 ## Failed attempts
 (none)
+
+## Failed attempts
+- ATTEMPT 1 [L1] (barge_app 保存ボタン): position:fixed→stickyへ変更 -> タップ判定は復活したがiOS本番で保存されず（送信未発火）
+- ATTEMPT 2 [L2]: 新仮説=iOS WebKitはform属性の外部submitterクリックで送信を発火しない -> クリック時にform.requestSubmit()を直接呼ぶ
