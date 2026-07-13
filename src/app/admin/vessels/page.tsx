@@ -150,13 +150,13 @@ function TankFields({ vessel, departments }: { vessel: VesselWithMeta; departmen
             className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-0.5 pr-1 pl-2.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
           >
             {link.itemType.name}
-            <button
+            <ActionButton
               form={`content-rm-${link.id}`}
-              className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700"
+              className="flex h-4 w-4 items-center justify-center rounded-full text-sm no-underline text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700"
               aria-label={`${link.itemType.name}を解除`}
             >
               ×
-            </button>
+            </ActionButton>
           </span>
         ))}
         <TextInput
@@ -362,9 +362,6 @@ export default async function VesselsPage({
         </form>
       </div>
 
-      {/* 全バージ・全タンク共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
-      <form id={FORM_ID} action={saveBargeSettings} />
-
       <div className="space-y-3">
         {barges.map((barge) => {
           const totalMax = barge.vessels.reduce((sum, v) => sum + Number(v.maxCapacity), 0);
@@ -539,7 +536,8 @@ export default async function VesselsPage({
         </details>
       </section>
 
-      <StickySaveButton formId={FORM_ID} />
+      {/* 一括保存フォーム本体＋保存ボタン。各フィールドはform属性でこのフォームidに紐づく */}
+      <StickySaveButton formId={FORM_ID} action={saveBargeSettings} />
     </div>
   );
 }

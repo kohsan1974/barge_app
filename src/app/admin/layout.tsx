@@ -24,11 +24,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/");
   }
 
+  // スマホは縦積み（メニューは上部の横スクロールチップ）、md以上は従来の左サイドバー。
+  // 管理画面をスマホ幅に収めてピンチズーム不要にする（ズーム中はiOS Safariの
+  // タップ判定ずれ等の不具合を踏むため、横スクロールが必要な表はページ全体ではなく表だけをスクロールさせる）
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-black">
-      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-8 py-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-zinc-200 bg-white px-4 py-3 md:px-8 md:py-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center gap-3 md:gap-6">
+          <Link href="/" className="text-base font-semibold text-zinc-900 md:text-lg dark:text-zinc-50">
             受入・タンク管理システム
           </Link>
           <span className="text-sm text-zinc-400">管理者設定</span>
@@ -37,14 +40,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           ダッシュボードへ戻る
         </Link>
       </header>
-      <div className="mx-auto flex w-full max-w-5xl flex-1 gap-8 px-8 py-8">
-        <nav className="w-44 shrink-0">
-          <ul className="space-y-1">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-4 md:flex-row md:gap-8 md:px-8 md:py-8">
+        <nav className="md:w-44 md:shrink-0">
+          <ul className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 md:mx-0 md:block md:space-y-1 md:overflow-visible md:px-0 md:pb-0">
             {navItems.map((item) => (
-              <li key={item.href}>
+              <li key={item.href} className="shrink-0">
                 <Link
                   href={item.href}
-                  className="block rounded px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="block rounded border border-zinc-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap text-zinc-700 hover:bg-zinc-100 md:border-0 md:bg-transparent md:py-2 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 md:dark:bg-transparent dark:hover:bg-zinc-800"
                 >
                   {item.label}
                 </Link>
@@ -52,7 +55,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             ))}
           </ul>
         </nav>
-        <main className="flex-1">{children}</main>
+        <main className="min-w-0 flex-1">{children}</main>
       </div>
     </div>
   );

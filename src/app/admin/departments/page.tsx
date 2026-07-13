@@ -38,10 +38,7 @@ export default async function DepartmentsPage() {
         </form>
       </div>
 
-      {/* 全部署共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
-      <form id={FORM_ID} action={saveDepartments} />
-
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400">
@@ -90,7 +87,8 @@ export default async function DepartmentsPage() {
         </table>
       </div>
 
-      <StickySaveButton formId={FORM_ID} />
+      {/* 一括保存フォーム本体＋保存ボタン。各フィールドはform属性でこのフォームidに紐づく */}
+      <StickySaveButton formId={FORM_ID} action={saveDepartments} />
     </div>
   );
 }
