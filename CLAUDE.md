@@ -36,10 +36,18 @@ Row matched: write `TRIGGER: <event> -> <doc>`; your next tool call is Read on t
 ## Project
 - Task: manage tank capacity + oil-water separation logic across a 5-barge fleet.
 - Stack: Node.js (Next.js) app; AppSheet (legacy/parallel data source); Google Apps Script (GAS) for automation; PowerShell for CLI/ops on this machine.
+- Detail stack: Next.js 16 App Router + TypeScript, Tailwind v4, Prisma 7 (client output `src/generated/prisma`, connect via `@prisma/adapter-pg`), Neon Postgres, NextAuth v5 Credentials (JWT).
+- Full domain/architecture spec (Japanese, authoritative, kept current): AGENTS.md — read before non-trivial changes.
+- Commands: `npm run dev` (port 3000) / `npm run build` / `npm run lint` (keep `--max-warnings 0` clean) / `npx tsc --noEmit` / `npx tsx scripts/unit-tests.ts` (only test suite, no runner configured) / `npx prisma migrate dev` / `npx prisma db seed` (needs `SEED_ADMIN_LOGIN_ID`/`SEED_ADMIN_PASSWORD` env vars).
+- Auth split: `src/lib/auth.config.ts` (Edge-safe, no Prisma) vs `src/lib/auth.ts` (DB-backed); route protection in `src/proxy.ts` (Next 16 deprecates middleware.ts).
+- `tank_transactions` is an append-only ledger — UPDATE/DELETE blocked by DB trigger except siteId-only correction; numeric corrections are new `CORRECTION` rows referencing `referenceTransactionId`.
+- `Vessel.currentBalance` is a cache updated only inside the same transaction as a ledger INSERT with a `SELECT ... FOR UPDATE` row lock (`src/lib/actions/record-transaction.ts`).
 - ABSOLUTE — Site cleansing: trim only. Strip leading/trailing whitespace. Never remove/collapse internal spaces in site names.
 - ABSOLUTE — Operator cleansing: strip ALL whitespace. Remove every space (leading, trailing, internal) from operator names.
 - Do not conflate the two cleansing rules — they intentionally differ (site keeps internal spaces, operator removes all).
 - Apply cleansing at data-entry/import boundaries (AppSheet sync, GAS scripts, Next.js forms) before persistence — not just at display time.
+- Shared UI primitives live in `src/components/ui.tsx` (FieldLabel/TextInput/Select/Textarea/PrimaryButton/ActionButton) — use them, don't copy raw Tailwind classes.
+- Dates: never use `toISOString()` for business dates (UTC shift breaks JST midnight-9am); use `todayLocalDate()`/`todayJst()` in `src/lib/business-date.ts`.
 
 <!-- BEGIN KIT FOOTER v1.0 -->
 ## Hard stops
