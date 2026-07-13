@@ -40,7 +40,6 @@ export default async function DepartmentsPage() {
 
       {/* 全部署共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
       <form id={FORM_ID} action={saveDepartments} />
-      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
@@ -90,6 +89,8 @@ export default async function DepartmentsPage() {
           </tbody>
         </table>
       </div>
+
+      <StickySaveButton formId={FORM_ID} />
     </div>
   );
 }

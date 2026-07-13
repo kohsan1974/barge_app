@@ -90,7 +90,6 @@ export default async function ShipsPage({
       {/* 名前・IMO番号の一括保存フォーム本体。フィールドはform属性でここに紐づく
           （現場の割り当てはチップUIで即時保存されるため一括保存の対象外） */}
       <form id={FORM_ID} action={saveShips} />
-      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
@@ -204,6 +203,8 @@ export default async function ShipsPage({
           </tbody>
         </table>
       </div>
+
+      <StickySaveButton formId={FORM_ID} />
     </div>
   );
 }

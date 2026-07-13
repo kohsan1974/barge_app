@@ -364,7 +364,6 @@ export default async function VesselsPage({
 
       {/* 全バージ・全タンク共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
       <form id={FORM_ID} action={saveBargeSettings} />
-      <StickySaveButton formId={FORM_ID} />
 
       <div className="space-y-3">
         {barges.map((barge) => {
@@ -539,6 +538,8 @@ export default async function VesselsPage({
           </form>
         </details>
       </section>
+
+      <StickySaveButton formId={FORM_ID} />
     </div>
   );
 }
