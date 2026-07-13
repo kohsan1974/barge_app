@@ -90,7 +90,6 @@ export default async function SitesPage({
       <form id="merge-form" action={mergeSites} />
       {/* 全現場共通の一括保存フォーム本体（現場名・所属部署編集用）。フィールドはform属性でここに紐づく */}
       <form id={FORM_ID} action={saveSites} />
-      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-800">
@@ -249,6 +248,8 @@ export default async function SitesPage({
           </tbody>
         </table>
       </div>
+
+      <StickySaveButton formId={FORM_ID} />
     </div>
   );
 }

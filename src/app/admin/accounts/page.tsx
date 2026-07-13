@@ -107,7 +107,6 @@ export default async function AccountsPage({
 
       {/* 全アカウント共通の一括保存フォーム本体。フィールドはform属性でここに紐づく */}
       <form id={FORM_ID} action={saveAccounts} />
-      <StickySaveButton formId={FORM_ID} />
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <table className="w-full text-sm">
@@ -201,6 +200,8 @@ export default async function AccountsPage({
           </tbody>
         </table>
       </div>
+
+      <StickySaveButton formId={FORM_ID} />
     </div>
   );
 }
