@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { createAccount, saveAccounts, toggleAccountActive, deleteAccount } from "@/lib/actions/accounts";
-import { StickySaveButton } from "@/components/sticky-save-button";
+import {
+  createAccount,
+  updateAccountField,
+  setAccountDepartment,
+  toggleAccountActive,
+  deleteAccount,
+} from "@/lib/actions/accounts";
 import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
-
-const FORM_ID = "accounts-form";
+import { AutoText, AutoSelect, AutoCheckbox, ConfirmButton } from "@/components/admin-autosave";
 
 const errorMessages: Record<string, string> = {
   invalid_login_id: "ログインIDは半角英数字・.・_・-のみ、3〜32文字で入力してください",
@@ -127,44 +131,42 @@ export default async function AccountsPage({
                 <tr key={u.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <input type="hidden" name="userIds" value={u.id} form={FORM_ID} />
-                      <TextInput
-                        name={`loginId_${u.id}`}
-                        defaultValue={u.loginId}
+                      <AutoText
+                        initialValue={u.loginId}
+                        onSave={updateAccountField.bind(null, u.id, "loginId")}
                         pattern="[A-Za-z0-9_.@\-]{3,32}"
-                        form={FORM_ID}
                         className="w-28 px-2 py-1"
                       />
-                      <TextInput
-                        name={`displayName_${u.id}`}
-                        defaultValue={u.displayName}
-                        form={FORM_ID}
+                      <AutoText
+                        initialValue={u.displayName}
+                        onSave={updateAccountField.bind(null, u.id, "displayName")}
                         className="w-28 px-2 py-1"
                       />
-                      <Select name={`role_${u.id}`} defaultValue={u.role} form={FORM_ID} className="px-2 py-1">
+                      <AutoSelect
+                        initialValue={u.role}
+                        onSave={updateAccountField.bind(null, u.id, "role")}
+                        className="px-2 py-1"
+                      >
                         <option value="STAFF">一般</option>
                         <option value="ADMIN">管理者</option>
-                      </Select>
-                      <TextInput
-                        name={`password_${u.id}`}
+                      </AutoSelect>
+                      <AutoText
+                        initialValue=""
+                        onSave={updateAccountField.bind(null, u.id, "password")}
                         type="text"
-                        placeholder="変更する場合のみ入力"
+                        placeholder="パスワード変更"
                         minLength={8}
-                        form={FORM_ID}
                         className="w-40 px-2 py-1"
                       />
                       <span className="flex flex-wrap gap-2">
                         {departments.map((d) => (
-                          <label key={d.id} className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                            <input
-                              type="checkbox"
-                              name={`departmentIds_${u.id}`}
-                              value={d.id}
-                              defaultChecked={assignedIds.has(d.id)}
-                              form={FORM_ID}
-                            />
-                            {d.name}
-                          </label>
+                          <AutoCheckbox
+                            key={d.id}
+                            initialChecked={assignedIds.has(d.id)}
+                            onSave={setAccountDepartment.bind(null, u.id, d.id)}
+                            label={d.name}
+                            className="text-xs text-zinc-600 dark:text-zinc-400"
+                          />
                         ))}
                       </span>
                     </div>
@@ -184,9 +186,11 @@ export default async function AccountsPage({
                         <ActionButton>{u.isActive ? "無効化" : "有効化"}</ActionButton>
                       </form>
                       {deletable && (
-                        <form action={deleteAccount}>
+                        <form action={deleteAccount} className="inline-flex">
                           <input type="hidden" name="id" value={u.id} />
-                          <ActionButton tone="red">削除</ActionButton>
+                          <ConfirmButton confirmText={`アカウント「${u.displayName}」を削除します。よろしいですか？`}>
+                            削除
+                          </ConfirmButton>
                         </form>
                       )}
                     </div>
@@ -197,9 +201,6 @@ export default async function AccountsPage({
           </tbody>
         </table>
       </div>
-
-      {/* 全アカウント共通の一括保存フォーム本体＋保存ボタン。各フィールドはform属性でここに紐づく */}
-      <StickySaveButton formId={FORM_ID} action={saveAccounts} />
     </div>
   );
 }

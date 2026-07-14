@@ -1,16 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import {
   createShip,
-  saveShips,
+  updateShipField,
   toggleShipActive,
   deleteShip,
   addShipSite,
   removeShipSite,
 } from "@/lib/actions/ships";
-import { StickySaveButton } from "@/components/sticky-save-button";
 import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
-
-const FORM_ID = "ships-form";
+import { AutoText, ConfirmButton } from "@/components/admin-autosave";
 
 const errorMessages: Record<string, string> = {
   invalid_ship: "本船名を入力してください",
@@ -114,20 +112,18 @@ export default async function ShipsPage({
                   <tr key={ship.id} className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-800">
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="shipIds" value={ship.id} form={FORM_ID} />
-                        <TextInput
-                          name={`shipName_${ship.id}`}
-                          defaultValue={ship.name}
-                          form={FORM_ID}
+                        <AutoText
+                          initialValue={ship.name}
+                          onSave={updateShipField.bind(null, ship.id, "name")}
+                          required
                           className="w-36 px-2 py-1"
                         />
-                        <TextInput
-                          name={`shipImo_${ship.id}`}
-                          defaultValue={ship.imoNumber ?? ""}
+                        <AutoText
+                          initialValue={ship.imoNumber ?? ""}
+                          onSave={updateShipField.bind(null, ship.id, "imoNumber")}
                           pattern="\d{7}"
                           inputMode="numeric"
                           placeholder="IMO番号"
-                          form={FORM_ID}
                           className="w-28 px-2 py-1"
                         />
                       </div>
@@ -185,9 +181,11 @@ export default async function ShipsPage({
                           <ActionButton>{ship.isActive ? "無効化" : "有効化"}</ActionButton>
                         </form>
                         {ship._count.transactions === 0 && (
-                          <form action={deleteShip}>
+                          <form action={deleteShip} className="inline-flex">
                             <input type="hidden" name="id" value={ship.id} />
-                            <ActionButton tone="red">削除</ActionButton>
+                            <ConfirmButton confirmText={`本船「${ship.name}」を削除します。よろしいですか？`}>
+                              削除
+                            </ConfirmButton>
                           </form>
                         )}
                       </div>
@@ -199,10 +197,6 @@ export default async function ShipsPage({
           </tbody>
         </table>
       </div>
-
-      {/* 名前・IMO番号の一括保存フォーム本体＋保存ボタン。各フィールドはform属性でここに紐づく
-          （現場の割り当てはチップUIで即時保存されるため一括保存の対象外） */}
-      <StickySaveButton formId={FORM_ID} action={saveShips} />
     </div>
   );
 }

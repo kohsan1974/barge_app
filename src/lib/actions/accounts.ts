@@ -78,6 +78,77 @@ export async function createAccount(formData: FormData) {
   redirect("/admin/accounts?ok=created");
 }
 
+type SaveResult = { ok: true } | { ok: false; error: string };
+
+// 都度保存（オートセーブ）用: アカウント1件の1項目だけを更新する。結果を返す（redirectしない）。
+// パスワードは空なら変更なし（そのままok）。ログインID変更は一意制約(P2002)をハンドリングする。
+// 権限を管理者から一般へ落とす場合は、他に有効な管理者がいるかを確認してロックアウトを防ぐ
+export async function updateAccountField(
+  id: string,
+  field: "loginId" | "displayName" | "role" | "password",
+  value: string,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "対象のアカウントが見つかりません" };
+
+  try {
+    if (field === "loginId") {
+      const loginId = value.trim().toLowerCase();
+      if (!LOGIN_ID_RE.test(loginId)) {
+        return { ok: false, error: "ログインIDは半角英数字・.・_・-のみ、3〜32文字で入力してください" };
+      }
+      await prisma.user.update({ where: { id }, data: { loginId } });
+    } else if (field === "displayName") {
+      const displayName = cleanseOperatorName(value);
+      if (!displayName) return { ok: false, error: "表示名を入力してください" };
+      await prisma.user.update({ where: { id }, data: { displayName } });
+    } else if (field === "password") {
+      if (!value) return { ok: true }; // 空欄＝変更なし
+      if (value.length < 8) return { ok: false, error: "パスワードは8文字以上にしてください" };
+      const passwordHash = await bcrypt.hash(value, 10);
+      await prisma.user.update({ where: { id }, data: { passwordHash } });
+    } else {
+      const role = value === "ADMIN" ? ("ADMIN" as const) : ("STAFF" as const);
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (!target) return { ok: false, error: "対象のアカウントが見つかりません" };
+      if (target.role === "ADMIN" && target.isActive && role !== "ADMIN" && (await otherActiveAdminCount(prisma, id)) === 0) {
+        return { ok: false, error: "最後の有効な管理者を降格することはできません" };
+      }
+      await prisma.user.update({ where: { id }, data: { role } });
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "このログインIDは既に使われています" };
+    throw e;
+  }
+  revalidatePath("/admin/accounts");
+  return { ok: true };
+}
+
+// 都度保存用: アカウント×部署の割当を1組だけ切り替える。物理削除せず isActive で無効化する
+export async function setAccountDepartment(
+  userId: string,
+  departmentId: string,
+  linked: boolean,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!userId || !departmentId) return { ok: false, error: "対象が見つかりません" };
+
+  if (linked) {
+    await prisma.operatorDepartment.upsert({
+      where: { userId_departmentId: { userId, departmentId } },
+      update: { isActive: true },
+      create: { userId, departmentId },
+    });
+  } else {
+    await prisma.operatorDepartment.updateMany({
+      where: { userId, departmentId },
+      data: { isActive: false },
+    });
+  }
+  revalidatePath("/admin/accounts");
+  return { ok: true };
+}
+
 // アカウント一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する。
 // 先に全行の形式検証とパスワードハッシュ化を済ませてから1つのトランザクションで書き込み、
 // 途中エラーで「一部の行だけ保存された」中途半端な状態にならないようにする（全or無）

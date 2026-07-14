@@ -1,16 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import {
   createSite,
-  saveSites,
+  updateSiteName,
+  setSiteDepartment,
   toggleSiteActive,
   mergeSites,
   deleteSite,
 } from "@/lib/actions/sites";
 import { addShipSite, removeShipSite } from "@/lib/actions/ships";
-import { StickySaveButton } from "@/components/sticky-save-button";
 import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
-
-const FORM_ID = "sites-form";
+import { AutoText, AutoCheckbox, ConfirmButton } from "@/components/admin-autosave";
 
 const errorMessages: Record<string, string> = {
   not_found: "対象の現場が見つかりません",
@@ -157,25 +156,21 @@ export default async function SitesPage({
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="siteIds" value={s.id} form={FORM_ID} />
-                        <TextInput
-                          name={`siteName_${s.id}`}
-                          defaultValue={s.name}
-                          form={FORM_ID}
+                        <AutoText
+                          initialValue={s.name}
+                          onSave={updateSiteName.bind(null, s.id)}
+                          required
                           className="px-2 py-1"
                         />
                         <span className="flex flex-wrap gap-2">
                           {departments.map((d) => (
-                            <label key={d.id} className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                              <input
-                                type="checkbox"
-                                name={`siteDepartmentIds_${s.id}`}
-                                value={d.id}
-                                defaultChecked={assignedIds.has(d.id)}
-                                form={FORM_ID}
-                              />
-                              {d.name}
-                            </label>
+                            <AutoCheckbox
+                              key={d.id}
+                              initialChecked={assignedIds.has(d.id)}
+                              onSave={setSiteDepartment.bind(null, s.id, d.id)}
+                              label={d.name}
+                              className="text-xs text-zinc-600 dark:text-zinc-400"
+                            />
                           ))}
                         </span>
                       </div>
@@ -233,9 +228,11 @@ export default async function SitesPage({
                           <ActionButton>{s.isActive ? "無効化" : "有効化"}</ActionButton>
                         </form>
                         {s._count.transactions === 0 && (
-                          <form action={deleteSite}>
+                          <form action={deleteSite} className="inline-flex">
                             <input type="hidden" name="id" value={s.id} />
-                            <ActionButton tone="red">削除</ActionButton>
+                            <ConfirmButton confirmText={`現場「${s.name}」を削除します。よろしいですか？`}>
+                              削除
+                            </ConfirmButton>
                           </form>
                         )}
                       </div>
@@ -248,9 +245,6 @@ export default async function SitesPage({
         </table>
         </div>
       </div>
-
-      {/* 全現場共通の一括保存フォーム本体＋保存ボタン（現場名・所属部署編集用）。フィールドはform属性でここに紐づく */}
-      <StickySaveButton formId={FORM_ID} action={saveSites} />
     </div>
   );
 }

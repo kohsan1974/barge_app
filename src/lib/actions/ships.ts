@@ -57,6 +57,46 @@ export async function createShip(formData: FormData) {
   revalidatePath("/record");
 }
 
+// 都度保存（オートセーブ）用: 本船1件の名前 or IMO番号だけを更新する。結果を返す。
+// IMO番号は空欄可（持たない小型船）。名前・IMOの重複は一意制約でエラーにする
+export async function updateShipField(
+  id: string,
+  field: "name" | "imoNumber",
+  value: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "対象の本船が見つかりません" };
+
+  try {
+    if (field === "name") {
+      const name = value.trim();
+      if (!name) return { ok: false, error: "本船名を入力してください" };
+      await prisma.ship.update({ where: { id }, data: { name } });
+    } else {
+      const imo = value.trim();
+      if (imo && !IMO_RE.test(imo)) {
+        return { ok: false, error: "IMO番号は7桁の数字で入力してください（持たない船は空欄）" };
+      }
+      await prisma.ship.update({ where: { id }, data: { imoNumber: imo || null } });
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return {
+        ok: false,
+        error:
+          duplicateErrorCode(e) === "duplicate_imo"
+            ? "同じIMO番号の本船がすでに登録されています"
+            : "同じ名前の本船がすでに登録されています",
+      };
+    }
+    throw e;
+  }
+  revalidatePath("/admin/ships");
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+  return { ok: true };
+}
+
 // 本船一覧の一括保存（名前・IMO番号）。画面右下の共通「変更を保存」ボタンから全行分をまとめて送信する。
 // 先に全行を検証してから1つのトランザクションで書き込む（全or無）。
 // 現場の割り当てはチップUI（addShipSite/removeShipSite）で即時保存するため、ここでは扱わない

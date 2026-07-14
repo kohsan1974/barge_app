@@ -1,9 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { createDepartment, saveDepartments, toggleDepartmentActive } from "@/lib/actions/departments";
-import { StickySaveButton } from "@/components/sticky-save-button";
+import { createDepartment, updateDepartmentField, toggleDepartmentActive } from "@/lib/actions/departments";
 import { ActionButton, FieldLabel, PrimaryButton, Select, TextInput } from "@/components/ui";
-
-const FORM_ID = "departments-form";
+import { AutoText, AutoSelect } from "@/components/admin-autosave";
 
 const typeLabel: Record<string, string> = {
   TRANSPORT: "運搬部署",
@@ -52,18 +50,21 @@ export default async function DepartmentsPage() {
             {departments.map((d) => (
               <tr key={d.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                 <td className="px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    <input type="hidden" name="departmentIds" value={d.id} form={FORM_ID} />
-                    <TextInput
-                      name={`name_${d.id}`}
-                      defaultValue={d.name}
-                      form={FORM_ID}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AutoText
+                      initialValue={d.name}
+                      onSave={updateDepartmentField.bind(null, d.id, "name")}
+                      required
                       className="px-2 py-1"
                     />
-                    <Select name={`type_${d.id}`} defaultValue={d.type} form={FORM_ID} className="px-2 py-1">
+                    <AutoSelect
+                      initialValue={d.type}
+                      onSave={updateDepartmentField.bind(null, d.id, "type")}
+                      className="px-2 py-1"
+                    >
                       <option value="TRANSPORT">運搬部署</option>
                       <option value="PROCESSING">処理部署</option>
-                    </Select>
+                    </AutoSelect>
                   </div>
                 </td>
                 <td className="px-4 py-2 text-zinc-500">{typeLabel[d.type]}</td>
@@ -86,9 +87,6 @@ export default async function DepartmentsPage() {
           </tbody>
         </table>
       </div>
-
-      {/* 一括保存フォーム本体＋保存ボタン。各フィールドはform属性でこのフォームidに紐づく */}
-      <StickySaveButton formId={FORM_ID} action={saveDepartments} />
     </div>
   );
 }

@@ -55,6 +55,54 @@ export async function createSite(formData: FormData) {
   revalidatePath("/record");
 }
 
+type SaveResult = { ok: true } | { ok: false; error: string };
+
+// 都度保存（オートセーブ）用: 現場名だけを更新する（前後trimクレンジング）。結果を返す
+export async function updateSiteName(id: string, value: string): Promise<SaveResult> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "対象の現場が見つかりません" };
+  const name = cleanseSiteName(value);
+  if (!name) return { ok: false, error: "現場名を入力してください" };
+
+  try {
+    await prisma.site.update({ where: { id }, data: { name } });
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "同じ名前の現場がすでに登録されています" };
+    throw e;
+  }
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+  return { ok: true };
+}
+
+// 都度保存用: 現場×部署の割当を1組だけ切り替える。
+// 現場は最低1つの部署に属している必要があるため、最後の1つを外す操作は拒否する
+export async function setSiteDepartment(
+  siteId: string,
+  departmentId: string,
+  linked: boolean,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!siteId || !departmentId) return { ok: false, error: "対象が見つかりません" };
+
+  if (linked) {
+    await prisma.siteDepartment.upsert({
+      where: { siteId_departmentId: { siteId, departmentId } },
+      update: {},
+      create: { siteId, departmentId },
+    });
+  } else {
+    const count = await prisma.siteDepartment.count({ where: { siteId } });
+    if (count <= 1) {
+      return { ok: false, error: "現場には少なくとも1つの部署が必要です" };
+    }
+    await prisma.siteDepartment.deleteMany({ where: { siteId, departmentId } });
+  }
+  revalidatePath("/admin/sites");
+  revalidatePath("/record");
+  return { ok: true };
+}
+
 // 現場一覧の一括保存。画面右下の共通「変更を保存」ボタンから、全行分をまとめて送信する。
 // 先に全行を検証してから1つのトランザクションで書き込み、途中エラーで
 // 「一部の行だけ保存された」中途半端な状態にならないようにする（全or無）
