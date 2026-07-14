@@ -50,4 +50,4 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 ## 都度保存（オートセーブ）移行
 - 方針: 「変更を保存」ボタン廃止→各コントロール変更時に即保存。サーバーアクションを<form>送信でなく「bind済み関数の直接呼び出し」で起動（iOSのフォーム送信不具合を一切踏まない）。削除は確認ダイアログ、文字欄はblur保存。
 - step1完了(vessels): src/components/admin-autosave.tsx(新規: AutoText/AutoCheckbox/AutoSelect/VesselDeptRow/ConfirmButton)、barges.ts updateBargeField、vessels.ts updateVesselField/setVesselDepartmentLink、vessels/page.tsx全面置換。Playwright 5/5 PASS。
-- 残step: departments, accounts, sites, ships を同方式へ / StickySaveButton撤去。
+- 全step完了: departments/accounts/sites/ships もオートセーブ化、StickySaveButton撤去。Playwright 全画面9/9 + vessels 5/5 PASS。
