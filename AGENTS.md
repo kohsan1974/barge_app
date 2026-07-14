@@ -53,6 +53,7 @@ AppSheet（barge_ops_db）からのフルリプレイス。産廃・海防法関
 - **共有UIコンポーネント**（`src/components/ui.tsx`）：フォーム入力・ボタンの見た目は`FieldLabel`/`TextInput`/`Select`/`Textarea`/`PrimaryButton`/`ActionButton`（下線リンク風、tone=blue/red/zinc）に一元化した。`className`は`tailwind-merge`で後勝ちマージされるため、呼び出し側は幅（`w-20`等）やパディング（`py-1`等）だけ上書きすればよい。フックを使わないのでServer Componentからも使える。**新しい画面・フォームを作るときは生のTailwindクラス文字列をコピーせず、必ずこれらを使うこと**
 - **共有表示ヘルパー**（`src/lib/labels.ts`）：台帳種別の対訳`TRANSACTION_TYPE_LABELS`と「バージ名-タンク名」表記の`vesselLabel()`。CSVエクスポート(`ledger-export.ts`)のラベルは提出済みファイルとの互換のため独立（CALIBRATION=「残量調整」）で、統合禁止。業務日初期値は`todayLocalDate()`（クライアント・端末ローカル）と`todayJst()`（サーバー検証・JST固定）を使い分ける
 - **管理者判定は`isActiveAdmin(userId)`**（`require-admin.ts`）に一元化：requireAdmin/getAdminUserId/両レイアウトすべてが同じ「DBの現在値でrole+isActive確認」を通る。`tsc`と`eslint --max-warnings 0`は常時クリーンを維持すること（lint失敗=本物の問題）
+- **`isActiveAdmin`は判定がfalseの場合、短い間隔（0/300/800/1500ms）で最大4回読み直す**。Neonの接続プーリングの性質上、直前の書き込み（例: 別の管理操作や自分自身のログイン直後）が別接続からは反映前に一瞬見えることがあり、これにより有効な管理者が誤って「権限なし」(`Error: 管理者権限が必要です`)と判定されて保存操作全体が500エラーで失敗する事故が本番で実際に発生した（本番ブラウザでの実クリックとVercelログの`error POST /admin/vessels 500`で再現・特定）。`withDbRetry`（接続断P1001/P2028を再試行）とは別物で、こちらはクエリ自体は成功するが結果が古いケースに対応する。本当に管理者でない場合は結果が変わらずfalseのままなので、正当な拒否には数百ms〜数秒の遅延が乗るだけで安全側に倒れる。最初の1回で判定できれば遅延ゼロ（実運用のほぼ全てのケース）
 
 ## 未実装（次の候補）
 - 産廃管理票・海防法の正式様式でのPDF/Excel出力（実物の様式入手待ち。「品目種類が追加できれば柔軟でよい」との合意）
