@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/require-admin";
-import { isUniqueViolation } from "@/lib/db-utils";
+import { isUniqueViolation, withDbRetry } from "@/lib/db-utils";
+import { toCenti } from "@/lib/quantity";
+import type { SaveResult } from "@/lib/actions/barges";
 
 export async function createVessel(formData: FormData) {
   await requireAdmin();
@@ -32,7 +34,85 @@ export async function createVessel(formData: FormData) {
   revalidatePath("/record");
 }
 
-// タンクの編集（名前・容量・ツリー表示）はバージ単位の一括保存（saveBargeSettings）に統合済み
+// 都度保存（オートセーブ）用: タンク1件の1項目だけを更新する。結果を返す（redirectしない）。
+// 最大容量の変更は記録処理と同じ行ロック(FOR UPDATE)内で残量チェックし、
+// 「チェック直後に搬入が走って残量>容量になる」競合窓を塞ぐ
+export async function updateVesselField(
+  id: string,
+  field: "name" | "maxCapacity" | "showIndividually",
+  value: string | boolean,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "対象のタンクが見つかりません" };
+
+  try {
+    if (field === "name") {
+      const name = String(value).trim();
+      if (!name) return { ok: false, error: "タンクの番号を入力してください" };
+      await prisma.vessel.update({ where: { id }, data: { name } });
+    } else if (field === "showIndividually") {
+      await prisma.vessel.update({ where: { id }, data: { showIndividually: Boolean(value) } });
+    } else {
+      const maxCapacity = Number(value);
+      if (!Number.isFinite(maxCapacity) || maxCapacity <= 0) {
+        return { ok: false, error: "最大容量は0より大きい値を入力してください" };
+      }
+      const result = await withDbRetry(() =>
+        prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<
+            { currentBalance: string }[]
+          >`SELECT "currentBalance" FROM "master_vessel" WHERE "id" = ${id} FOR UPDATE`;
+          if (locked.length === 0) return { ok: false as const, error: "対象のタンクが見つかりません" };
+          if (toCenti(maxCapacity) < toCenti(locked[0].currentBalance)) {
+            return {
+              ok: false as const,
+              error: "現在の残量より小さい最大容量には変更できません（先に処理で残量を減らしてください）",
+            };
+          }
+          await tx.vessel.update({ where: { id }, data: { maxCapacity } });
+          return { ok: true as const };
+        }),
+      );
+      if (!result.ok) return result;
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { ok: false, error: "同じバージ内に同じ番号のタンクがすでに登録されています" };
+    }
+    throw e;
+  }
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
+  revalidatePath("/record");
+  return { ok: true };
+}
+
+// 都度保存用: タンク×部署のリンクと役割フラグ（受入/搬入）を1組だけ更新する。
+// linked=false ならリンクを削除、trueなら役割フラグ付きでupsertする
+export async function setVesselDepartmentLink(
+  vesselId: string,
+  departmentId: string,
+  linked: boolean,
+  allowReceiving: boolean,
+  allowSourcing: boolean,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!vesselId || !departmentId) return { ok: false, error: "対象が見つかりません" };
+
+  if (linked) {
+    await prisma.vesselDepartment.upsert({
+      where: { vesselId_departmentId: { vesselId, departmentId } },
+      update: { allowReceiving, allowSourcing },
+      create: { vesselId, departmentId, allowReceiving, allowSourcing },
+    });
+  } else {
+    await prisma.vesselDepartment.deleteMany({ where: { vesselId, departmentId } });
+  }
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
+  revalidatePath("/record");
+  return { ok: true };
+}
 
 // タンクの物理削除。台帳から参照されているタンクは法的証跡が失われるため削除できない（廃止を使う）
 export async function deleteVessel(formData: FormData) {

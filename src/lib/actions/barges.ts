@@ -29,6 +29,36 @@ export async function createBarge(formData: FormData) {
   revalidatePath("/barges");
 }
 
+// 都度保存（オートセーブ）用: バージ1件の1項目だけを更新する。
+// クライアント側のコントロール変更時に直接呼ばれ、結果を返す（redirectしない＝画面遷移させない）
+export type SaveResult = { ok: true } | { ok: false; error: string };
+
+export async function updateBargeField(
+  id: string,
+  field: "name" | "showTotalOnly",
+  value: string | boolean,
+): Promise<SaveResult> {
+  await requireAdmin();
+  if (!id) return { ok: false, error: "対象のバージが見つかりません" };
+
+  try {
+    if (field === "name") {
+      const name = String(value).trim();
+      if (!name) return { ok: false, error: "バージ名を入力してください" };
+      await prisma.barge.update({ where: { id }, data: { name } });
+    } else {
+      await prisma.barge.update({ where: { id }, data: { showTotalOnly: Boolean(value) } });
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "同じ名前のバージがすでに登録されています" };
+    throw e;
+  }
+  revalidatePath("/admin/vessels");
+  revalidatePath("/barges");
+  revalidatePath("/record");
+  return { ok: true };
+}
+
 // バージ・タンクマスタ全体の一括保存。ページ内の全バージ（複数）＋全タンクの
 // 名前・最大容量・表示設定・所属部署・役割をひとつのトランザクションでまとめて更新する
 // （画面右下の共通「変更を保存」ボタンから、開いていないバージ分も含めて送信される）
