@@ -12,6 +12,6 @@ export default auth((req) => {
 });
 
 export const config = {
-  // api/cron はセッションではなく CRON_SECRET で認証するため除外する
-  matcher: ["/((?!api/auth|api/cron|login|_next/static|_next/image|favicon.ico).*)"],
+  // api/cron はCRON_SECRET、api/ping はkeep-warm用で認証不要のため除外する
+  matcher: ["/((?!api/auth|api/cron|api/ping|login|_next/static|_next/image|favicon.ico).*)"],
 };
