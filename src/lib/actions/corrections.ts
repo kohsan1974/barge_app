@@ -41,6 +41,9 @@ export async function createCorrection(
     include: { corrections: { select: { id: true } } },
   });
   if (!original) return { error: "訂正対象の記録が見つかりません" };
+  if (original.voidedAt !== null) {
+    return { error: "取消済みの記録は訂正できません（取消により出力・残量から除外済みです）" };
+  }
   if (original.transactionType === "CORRECTION") {
     return { error: "訂正行そのものは訂正できません（誤って訂正した場合は元の記録をもう一度訂正するのではなく、通常の記録で正しい値を入力してください）" };
   }

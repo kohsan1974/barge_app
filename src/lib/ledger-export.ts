@@ -45,6 +45,8 @@ export async function buildLedgerRows(filter: LedgerFilter): Promise<string[][]>
     where: {
       businessDate: { gte: filter.from, lte: filter.to },
       ...(filter.vesselId ? { vesselId: filter.vesselId } : {}),
+      // 取消（論理削除）済みの記録は公的提出・集計から除外する（誤入力が計上されないように）
+      voidedAt: null,
     },
     orderBy: [{ businessDate: "asc" }, { createdAt: "asc" }],
     include: {

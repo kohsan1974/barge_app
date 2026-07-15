@@ -57,3 +57,12 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 対策: RecordSubmissionテーブル（クライアント生成UUIDをPK）を追加。recordTransactionのトランザクション先頭でINSERTし、二重送信は一意制約で弾いて1件だけ記録（P2002は成功扱いで冪等）。
 - クライアント: submissionIdをrefで管理、成功時はリセットせず「次のユーザー編集」で更新（直列化される連打でも重複しないため）。
 - Playwright実測: 単発+1 / 二重送信+1のみ / 別記録は別伝票+1。
+
+## 記録の取消（論理削除）— 完了（Step 2）
+- admin限定・伝票(slip)単位。物理削除せず voidedAt/voidedById/voidReason をセット。
+- DBトリガーv3: siteIdのみ許可に加え「取消3列のみのUPDATE」を許可（migration add_transaction_void）。
+- void-record.ts: 残量を行ロックで巻き戻し（0..max ガード）、訂正済み・CALIBRATION/CORRECTIONは取消不可。
+- 履歴(/history): admin判定、取消済みは横線＋「削除しました」＋監査情報、adminに取消ボタン(理由prompt必須)。
+- 出力(ledger-export)・訂正一覧・createCorrection: voidedAt除外/ガード。
+- vercel.json: regions=["sin1"]（Neon ap-southeast-1に合わせ）。
+- Playwright 9/9 PASS（残量巻き戻し・横線・監査・CSV除外・論理削除で行残存）。
