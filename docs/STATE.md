@@ -51,3 +51,9 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 方針: 「変更を保存」ボタン廃止→各コントロール変更時に即保存。サーバーアクションを<form>送信でなく「bind済み関数の直接呼び出し」で起動（iOSのフォーム送信不具合を一切踏まない）。削除は確認ダイアログ、文字欄はblur保存。
 - step1完了(vessels): src/components/admin-autosave.tsx(新規: AutoText/AutoCheckbox/AutoSelect/VesselDeptRow/ConfirmButton)、barges.ts updateBargeField、vessels.ts updateVesselField/setVesselDepartmentLink、vessels/page.tsx全面置換。Playwright 5/5 PASS。
 - 全step完了: departments/accounts/sites/ships もオートセーブ化、StickySaveButton撤去。Playwright 全画面9/9 + vessels 5/5 PASS。
+
+## 記録の連投防止（冪等キー）— 完了
+- 原因: サーバー処理が遅く、pending無効化が反映される前に登録ボタンが連打され二重INSERT。
+- 対策: RecordSubmissionテーブル（クライアント生成UUIDをPK）を追加。recordTransactionのトランザクション先頭でINSERTし、二重送信は一意制約で弾いて1件だけ記録（P2002は成功扱いで冪等）。
+- クライアント: submissionIdをrefで管理、成功時はリセットせず「次のユーザー編集」で更新（直列化される連打でも重複しないため）。
+- Playwright実測: 単発+1 / 二重送信+1のみ / 別記録は別伝票+1。

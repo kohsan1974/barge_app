@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useMemo, useState } from "react";
+import { useActionState, useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordTransaction, type RecordTransactionState } from "@/lib/actions/record-transaction";
 import { todayLocalDate } from "@/lib/business-date";
@@ -126,11 +126,30 @@ export function RecordForm({
     { itemTypeId: vesselCandidates[0]?.contents[0]?.id ?? "", quantity: "" },
   ]);
 
+  // 二重送信（連打・リトライ）防止の冪等キー。送信時に発行し、同じフォーム内容の再送は同じキーを使う
+  // ため、サーバー側で2件目以降が一意制約で弾かれる（連投しても1件だけ記録される）。
+  // 重要: 成功してもキーはリセットしない（連打が直列処理される場合、成功→即リセットだと2発目が
+  // 新キーになって重複してしまうため）。代わりに「次のユーザー編集」でキーを更新する。
+  // refなので描画に影響せず、SSRのハイドレーション不一致も起こさない
+  const submissionIdRef = useRef("");
+  const needsNewKeyRef = useRef(false);
+
+  // 記録成功後、ユーザーが次の記録のために入力を変えた時点でキーを更新する
+  const rotateKeyIfNeeded = useCallback(() => {
+    if (needsNewKeyRef.current) {
+      submissionIdRef.current = ""; // 次の送信時に新しいキーを発行する
+      needsNewKeyRef.current = false;
+    }
+  }, []);
+
   const [state, formAction, pending] = useActionState(
     async (prevState: RecordTransactionState, formData: FormData) => {
+      if (!submissionIdRef.current) submissionIdRef.current = crypto.randomUUID();
+      formData.set("submissionId", submissionIdRef.current);
       const result = await recordTransaction(prevState, formData);
       if (result.success) {
         setItems([{ itemTypeId: availableContents[0]?.id ?? "", quantity: "" }]);
+        needsNewKeyRef.current = true; // 次の記録用に、以降の編集でキーを更新する
         router.refresh();
       }
       return result;
@@ -196,6 +215,7 @@ export function RecordForm({
   }
 
   function updateItem(index: number, patch: Partial<{ itemTypeId: string; quantity: string }>) {
+    rotateKeyIfNeeded(); // 直前の記録が成功済みなら、この編集を新しい記録の開始とみなしてキーを更新する
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }
 

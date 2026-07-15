@@ -284,6 +284,16 @@ model TankTransaction {
   @@map("tank_transactions")
 }
 
+// 記録送信の冪等ガード。1回の記録送信＝クライアント生成のUUID1件。
+// 連打・通信リトライで同じ送信が二重に届いても、このテーブルへのINSERTが一意制約で弾かれ、
+// 台帳への二重記録（誤った連投）を防ぐ。記録トランザクションの先頭でINSERTしてロック兼ガードにする
+model RecordSubmission {
+  id        String   @id // クライアントが記録フォームごとに発行するUUID
+  createdAt DateTime @default(now())
+
+  @@map("record_submissions")
+}
+
 // 現場統合の監査ログ。台帳のsiteId訂正（追記専用制約の唯一の例外）の説明責任を担保する。
 // 統合元の現場は物理削除されるため、名称・部署は実行時点のスナップショットとして保持する
 model SiteMergeLog {
