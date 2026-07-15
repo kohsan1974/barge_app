@@ -45,6 +45,7 @@ model User {
   departmentLinks       OperatorDepartment[]
   recordedTransactions  TankTransaction[]    @relation("RecordedTransactions")
   approvedTransactions  TankTransaction[]    @relation("ApprovedTransactions")
+  voidedTransactions    TankTransaction[]    @relation("VoidedTransactions")
   exportRequests        ExportHistory[]
   siteMergeLogs         SiteMergeLog[]
 
@@ -273,6 +274,14 @@ model TankTransaction {
   corrections            TankTransaction[] @relation("TransactionCorrection")
 
   reason String? // CALIBRATION・CORRECTIONでは必須（アプリ層でバリデーション）
+
+  // 取消（論理削除）。adminのみが伝票単位で設定する。行は物理削除せず、これらの列で「消された」ことを表す。
+  // 取消済みの行は出力(CSV)・残量計算・集計から除外し、履歴では横線＋「削除しました」で表示する。
+  // DBの追記専用トリガーは、これら取消3列のみのUPDATEを例外的に許可する（siteId訂正と同じ仕組み）
+  voidedAt   DateTime? // 取消日時（nullなら有効な記録）
+  voidedById String? // 取消を実行した管理者
+  voidedBy   User?     @relation("VoidedTransactions", fields: [voidedById], references: [id])
+  voidReason String? // 取消理由（取消時は必須・アプリ層でバリデーション）
 
   approvedById String? // CALIBRATIONは管理者承認必須
   approvedBy   User?   @relation("ApprovedTransactions", fields: [approvedById], references: [id])

@@ -1,16 +1,36 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/require-admin";
 import { TRANSACTION_TYPE_LABELS, vesselLabel } from "@/lib/labels";
+import { voidTransactionSlip } from "@/lib/actions/void-record";
+import { VoidRecordButton } from "@/components/admin-autosave";
 
 const PER_PAGE = 50;
+
+const errorMessages: Record<string, string> = {
+  admin_required: "取消は管理者のみ実行できます",
+  not_found: "対象の記録が見つかりません（すでに取消済みの可能性があります）",
+  void_reason: "取消理由を入力してください",
+  cannot_void_special: "残量調整・訂正の記録は取消できません",
+  already_corrected: "この記録は訂正済みのため取消できません（訂正で対応済みです）",
+  would_negative: "取り消すと残量がマイナスになります。この分はすでに処理済みの可能性があるため、残量調整で補正してください",
+  would_exceed: "取り消すと残量が最大容量を超えます。残量調整で補正してください",
+};
 
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; error?: string; ok?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const errorMessage = params.error ? (errorMessages[params.error] ?? "取消に失敗しました") : null;
+  const okMessage = params.ok === "voided" ? "記録を取り消しました" : null;
+
+  const session = await auth();
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const isAdmin = userId ? await isActiveAdmin(userId) : false;
 
   const [transactions, total] = await Promise.all([
     prisma.tankTransaction.findMany({
@@ -25,6 +45,7 @@ export default async function HistoryPage({
         truck: true,
         itemType: true,
         recordedBy: true,
+        voidedBy: true,
         corrections: { select: { id: true } },
       },
     }),
@@ -38,32 +59,65 @@ export default async function HistoryPage({
         <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-50">記録履歴</h2>
         <span className="text-xs text-zinc-400">全{total}件</span>
       </div>
+      {errorMessage && (
+        <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
+          {errorMessage}
+        </p>
+      )}
+      {okMessage && (
+        <p className="mb-3 rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-400">
+          {okMessage}
+        </p>
+      )}
       {transactions.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">まだ記録がありません。</p>
       ) : (
         <ul className="space-y-2">
           {transactions.map((t) => {
             const quantity = Number(t.quantity);
+            const voided = t.voidedAt !== null;
+            // 取消可能なのは、admin かつ 未取消の通常記録（搬入・処理）で、訂正されていないもの
+            const canVoid =
+              isAdmin &&
+              !voided &&
+              (t.transactionType === "RECEIVE" || t.transactionType === "PROCESS") &&
+              t.corrections.length === 0;
             return (
               <li
                 key={t.id}
-                className="rounded-lg border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+                className={`rounded-lg border p-3 text-sm ${
+                  voided
+                    ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"
+                    : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+                }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                  <span
+                    className={`font-medium ${
+                      voided
+                        ? "text-zinc-400 line-through dark:text-zinc-500"
+                        : "text-zinc-900 dark:text-zinc-50"
+                    }`}
+                  >
                     {TRANSACTION_TYPE_LABELS[t.transactionType] ?? t.transactionType} ・{" "}
                     {vesselLabel(t.vessel)}
-                    {t.corrections.length > 0 && (
-                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {t.corrections.length > 0 && !voided && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                         訂正済み
                       </span>
                     )}
-                  </span>
-                  <span className="shrink-0 text-xs text-zinc-400">
-                    {t.businessDate.toISOString().slice(0, 10)}
+                    {voided && (
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
+                        削除しました
+                      </span>
+                    )}
+                    <span className="text-xs text-zinc-400">{t.businessDate.toISOString().slice(0, 10)}</span>
+                    {canVoid && <VoidRecordButton slipId={t.slipId} action={voidTransactionSlip} />}
                   </span>
                 </div>
-                <div className="mt-1 text-zinc-600 dark:text-zinc-400">
+                <div className={`mt-1 ${voided ? "text-zinc-400 line-through dark:text-zinc-500" : "text-zinc-600 dark:text-zinc-400"}`}>
                   {t.transactionType === "CALIBRATION" ? (
                     <>
                       システム値 {Number(t.systemValueBefore).toFixed(2)}kL → 実測{" "}
@@ -89,6 +143,12 @@ export default async function HistoryPage({
                   {t.truck ? ` / ${t.truck.name}` : ""}
                   ・記録者: {t.recordedBy.displayName}
                 </div>
+                {voided && (
+                  <div className="mt-1 rounded bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-300">
+                    削除: {t.voidedBy?.displayName ?? "管理者"}（{t.voidedAt!.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}）
+                    {t.voidReason ? ` ／ 理由: ${t.voidReason}` : ""}
+                  </div>
+                )}
               </li>
             );
           })}

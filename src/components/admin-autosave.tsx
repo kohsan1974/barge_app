@@ -230,6 +230,37 @@ export function VesselDeptRow({
   );
 }
 
+// 記録の取消（論理削除）ボタン。押すと理由の入力を求め、入力された時だけネイティブ<form>送信で実行する。
+// 取消は伝票(slip)単位。理由は法的証跡として必須（未入力・キャンセルなら送信しない）
+export function VoidRecordButton({
+  slipId,
+  action,
+  label = "取消",
+}: {
+  slipId: string;
+  action: (formData: FormData) => void | Promise<void>;
+  label?: string;
+}) {
+  const reasonRef = useRef<HTMLInputElement>(null);
+  function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
+    const reason = window.prompt("この記録を取り消します（出力・残量から除外され、履歴には取消として残ります）。\n理由を入力してください（必須）");
+    if (reason == null || !reason.trim()) {
+      e.preventDefault(); // キャンセル・空欄なら送信しない
+      return;
+    }
+    if (reasonRef.current) reasonRef.current.value = reason.trim();
+  }
+  return (
+    <form action={action} className="inline-flex">
+      <input type="hidden" name="slipId" value={slipId} />
+      <input type="hidden" name="reason" ref={reasonRef} />
+      <button type="submit" onClick={handleClick} className="text-xs text-red-600 underline dark:text-red-400">
+        {label}
+      </button>
+    </form>
+  );
+}
+
 // 削除など不可逆操作のボタン。押すとブラウザ標準の確認ダイアログを出し、
 // OKのときだけネイティブ<form>送信で実行する（誤操作防止）
 export function ConfirmButton({

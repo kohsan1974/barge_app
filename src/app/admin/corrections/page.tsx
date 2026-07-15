@@ -103,7 +103,7 @@ export default async function CorrectionsPage({
   }
 
   const transactions = await prisma.tankTransaction.findMany({
-    where: { transactionType: { in: ["RECEIVE", "PROCESS"] } },
+    where: { transactionType: { in: ["RECEIVE", "PROCESS"] }, voidedAt: null },
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
