@@ -186,6 +186,9 @@ export async function recordTransaction(
   const businessDateRaw = String(formData.get("businessDate") ?? "");
   const itemTypeIds = formData.getAll("itemTypeId").map(String);
   const quantities = formData.getAll("quantity").map((v) => Number(v));
+  // 二重送信（連打・通信リトライ）の冪等ガード用。クライアントが記録フォームごとに発行するUUID。
+  // トランザクション先頭でrecord_submissionsにINSERTし、二重目は一意制約で弾いて連投を防ぐ
+  const submissionId = String(formData.get("submissionId") ?? "") || null;
 
   if (!departmentId || !vesselRef || !businessDateRaw) {
     return { error: "入力内容が不正です" };
@@ -355,6 +358,13 @@ export async function recordTransaction(
     // 既定の5秒を超え得るため、タイムアウトに余裕を持たせる
     await withDbRetry(() =>
       prisma.$transaction(async (tx) => {
+        // 冪等ガード：同じ送信が二重に届いたら、ここのINSERTが一意制約(P2002)で失敗し、
+        // トランザクション全体がロールバックされる（台帳に1件も追加されない）。
+        // 並行する二重送信は、先の送信がコミットするまでこのINSERTがブロックされ、その後P2002になる
+        if (submissionId) {
+          await tx.recordSubmission.create({ data: { id: submissionId } });
+        }
+
         if (operation === "SHIFT" && sourceTarget) {
           // シフト：デッドロック回避のため、対象タンクをまとめてid昇順でロックする
           const allMembers = [...mainTarget.members, ...sourceTarget.members];
@@ -476,6 +486,13 @@ export async function recordTransaction(
       }, { timeout: 15000 }),
     );
   } catch (e) {
+    // トランザクション内の一意制約違反は、冪等ガード（record_submissions）の重複＝二重送信のみ。
+    // 1件目は既に記録済みなので、2件目は「成功（何もしない）」として返し、連投による重複を防ぐ
+    if (isUniqueViolation(e)) {
+      revalidatePath("/barges");
+      revalidatePath("/record");
+      return { error: null, success: true };
+    }
     return { error: e instanceof Error ? e.message : "記録に失敗しました" };
   }
 
