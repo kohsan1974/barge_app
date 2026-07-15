@@ -202,21 +202,26 @@ export async function recordTransaction(
     return { error: "品目を選択してください" };
   }
 
+  // 互いに独立した初期チェックはまとめて1往復で取得する（ボタン押下後の待ち時間短縮）。
+  //   me         = アカウントが有効か（無効化済みからの記録拒否）
+  //   assignment = 選択部署としての記録権限を持つか
+  //   department = 部署種別（選べる作業内容の制限に使う）
+  const [me, assignment, department] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { isActive: true } }),
+    prisma.operatorDepartment.findFirst({ where: { userId, departmentId, isActive: true } }),
+    prisma.department.findUnique({ where: { id: departmentId } }),
+  ]);
+
   // JWTセッションが残っていても、無効化済みアカウントからの記録は拒否する
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true } });
   if (!me?.isActive) {
     return { error: "アカウントが無効化されています。管理者に確認してください" };
   }
-
-  // ログインユーザーが選択した部署としての記録権限を持っているか確認する
-  const assignment = await prisma.operatorDepartment.findFirst({
-    where: { userId, departmentId, isActive: true },
-  });
   if (!assignment) {
     return { error: "この部署としての記録権限がありません" };
   }
-
-  const department = await prisma.department.findUniqueOrThrow({ where: { id: departmentId } });
+  if (!department) {
+    return { error: "選択された部署が見つかりません" };
+  }
   // 部署種別ごとに選べる作業内容を制限する（UI外からの不正リクエストも弾く）。
   // 搬入（外部からの受入）は運搬部署のみ、放流・出荷（外部への払い出し）は処理部署のみ
   const allowedOperations: Operation[] =

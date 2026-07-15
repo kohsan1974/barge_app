@@ -66,3 +66,9 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 出力(ledger-export)・訂正一覧・createCorrection: voidedAt除外/ガード。
 - vercel.json: regions=["sin1"]（Neon ap-southeast-1に合わせ）。
 - Playwright 9/9 PASS（残量巻き戻し・横線・監査・CSV除外・論理削除で行残存）。
+
+## パフォーマンス（コード側）— 完了（Step 4）
+- /api/ping: keep-warm用の軽量エンドポイント（SELECT 1、認証不要、proxyのmatcherから除外）。外部cronで数分おきに叩きNeonの自動サスペンドを回避。
+- record-transaction: 独立した初期3チェック（me/assignment/department）をPromise.allで1往復に集約（findUniqueOrThrow→findUnique+nullチェック）。
+- vercel.json regions=sin1 は Step2 で設定済み。
+- 回帰なし: 連投4項目・取消9項目 再実行OK。ping=200 {ok:true}。
