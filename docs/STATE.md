@@ -78,3 +78,8 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - admin navから「記録の訂正」除去、correction-form.tsx / actions/corrections.ts 削除、/admin/corrections は /history へリダイレクト。
 - 過去のCORRECTIONデータの表示（history/labels/export/voidガード）は継続。
 - 確認: nav除去・旧URLリダイレクト・取消健在 4/4 OK。
+
+## 取消ボタンが実機で無反応 → 直接呼び出し方式へ修正
+- 原因: VoidRecordButtonが window.prompt + ネイティブ<form action=サーバーアクション>送信方式。iOSでprompt/フォーム送信が不安定（保存ボタン問題と同クラス）。Chromiumでは通るが実機で無反応。
+- 修正: voidTransactionSlip を (slipId, reason)→結果 に変更（redirect廃止）。VoidRecordButtonを画面内の理由入力欄＋useTransitionでの直接呼び出しに書き換え（prompt・form送信を排除）。history側は bind で渡し、redirect用の?error/?ok処理を削除。
+- Playwright 9/9 OK（新方式で残量巻き戻し・横線・監査・CSV除外）。
