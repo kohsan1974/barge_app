@@ -72,3 +72,9 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - record-transaction: 独立した初期3チェック（me/assignment/department）をPromise.allで1往復に集約（findUniqueOrThrow→findUnique+nullチェック）。
 - vercel.json regions=sin1 は Step2 で設定済み。
 - 回帰なし: 連投4項目・取消9項目 再実行OK。ping=200 {ok:true}。
+
+## 訂正と取消の重複解消 — 完了
+- 決定: 記録の「取消（論理削除）」に一本化し、「記録の訂正（逆仕訳）」を廃止（誤入力が出力に残る訂正より、出力から除外される取消が目的に合致）。
+- admin navから「記録の訂正」除去、correction-form.tsx / actions/corrections.ts 削除、/admin/corrections は /history へリダイレクト。
+- 過去のCORRECTIONデータの表示（history/labels/export/voidガード）は継続。
+- 確認: nav除去・旧URLリダイレクト・取消健在 4/4 OK。
