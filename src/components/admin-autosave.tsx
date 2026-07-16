@@ -6,6 +6,7 @@
 // iOS Safariのフォーム送信まわりの不具合（フォーム外submitterが発火しない等）を一切踏まない。
 
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { twMerge } from "tailwind-merge";
 import { TextInput, Select } from "@/components/ui";
 
@@ -230,34 +231,90 @@ export function VesselDeptRow({
   );
 }
 
-// 記録の取消（論理削除）ボタン。押すと理由の入力を求め、入力された時だけネイティブ<form>送信で実行する。
-// 取消は伝票(slip)単位。理由は法的証跡として必須（未入力・キャンセルなら送信しない）
+// 記録の取消（論理削除）ボタン。押すと画面内に理由入力欄を出し、確定でサーバーアクションを
+// 「直接呼び出し」で実行する（window.promptもネイティブ<form>送信も使わない＝iOSでも確実に動く）。
+// 取消は伝票(slip)単位。理由は法的証跡として必須。
 export function VoidRecordButton({
-  slipId,
-  action,
+  onVoid,
   label = "取消",
 }: {
-  slipId: string;
-  action: (formData: FormData) => void | Promise<void>;
+  onVoid: (reason: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   label?: string;
 }) {
-  const reasonRef = useRef<HTMLInputElement>(null);
-  function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
-    const reason = window.prompt("この記録を取り消します（出力・残量から除外され、履歴には取消として残ります）。\n理由を入力してください（必須）");
-    if (reason == null || !reason.trim()) {
-      e.preventDefault(); // キャンセル・空欄なら送信しない
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function cancel() {
+    setOpen(false);
+    setReason("");
+    setError(null);
+  }
+
+  function submit() {
+    if (!reason.trim()) {
+      setError("理由を入力してください");
       return;
     }
-    if (reasonRef.current) reasonRef.current.value = reason.trim();
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await onVoid(reason.trim());
+        if (res.ok) {
+          cancel();
+          router.refresh(); // 取消結果（横線・残量）を反映
+        } else {
+          setError(res.error);
+        }
+      } catch {
+        setError("取消に失敗しました（通信エラー）");
+      }
+    });
   }
-  return (
-    <form action={action} className="inline-flex">
-      <input type="hidden" name="slipId" value={slipId} />
-      <input type="hidden" name="reason" ref={reasonRef} />
-      <button type="submit" onClick={handleClick} className="text-xs text-red-600 underline dark:text-red-400">
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-red-600 underline dark:text-red-400"
+      >
         {label}
       </button>
-    </form>
+    );
+  }
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className="inline-flex items-center gap-1">
+        <TextInput
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="取消理由（必須）"
+          autoFocus
+          className="w-40 px-2 py-0.5 text-xs"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={pending}
+          className="rounded bg-red-600 px-2 py-0.5 text-xs text-white disabled:opacity-50"
+        >
+          {pending ? "取消中…" : "確定"}
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          disabled={pending}
+          className="text-xs text-zinc-500 underline dark:text-zinc-400"
+        >
+          キャンセル
+        </button>
+      </span>
+      {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+    </span>
   );
 }
 

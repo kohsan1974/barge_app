@@ -8,25 +8,13 @@ import { VoidRecordButton } from "@/components/admin-autosave";
 
 const PER_PAGE = 50;
 
-const errorMessages: Record<string, string> = {
-  admin_required: "取消は管理者のみ実行できます",
-  not_found: "対象の記録が見つかりません（すでに取消済みの可能性があります）",
-  void_reason: "取消理由を入力してください",
-  cannot_void_special: "残量調整・訂正の記録は取消できません",
-  already_corrected: "この記録は訂正済みのため取消できません（訂正で対応済みです）",
-  would_negative: "取り消すと残量がマイナスになります。この分はすでに処理済みの可能性があるため、残量調整で補正してください",
-  would_exceed: "取り消すと残量が最大容量を超えます。残量調整で補正してください",
-};
-
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; error?: string; ok?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
-  const errorMessage = params.error ? (errorMessages[params.error] ?? "取消に失敗しました") : null;
-  const okMessage = params.ok === "voided" ? "記録を取り消しました" : null;
 
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -59,16 +47,6 @@ export default async function HistoryPage({
         <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-50">記録履歴</h2>
         <span className="text-xs text-zinc-400">全{total}件</span>
       </div>
-      {errorMessage && (
-        <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
-          {errorMessage}
-        </p>
-      )}
-      {okMessage && (
-        <p className="mb-3 rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-400">
-          {okMessage}
-        </p>
-      )}
       {transactions.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">まだ記録がありません。</p>
       ) : (
@@ -114,7 +92,7 @@ export default async function HistoryPage({
                       </span>
                     )}
                     <span className="text-xs text-zinc-400">{t.businessDate.toISOString().slice(0, 10)}</span>
-                    {canVoid && <VoidRecordButton slipId={t.slipId} action={voidTransactionSlip} />}
+                    {canVoid && <VoidRecordButton onVoid={voidTransactionSlip.bind(null, t.slipId)} />}
                   </span>
                 </div>
                 <div className={`mt-1 ${voided ? "text-zinc-400 line-through dark:text-zinc-500" : "text-zinc-600 dark:text-zinc-400"}`}>
