@@ -101,3 +101,9 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 残量は内容物別ではなくタンク単位の1数値なので安全。
 - Playwright 6/6: 両タンク未登録でも廃油を選べてシフト成功・残量が正しく移動・台帳に2行。
 - 未対応(要相談): 出荷/放流は登録内容物に限定のまま。容態変化後の払い出しで詰まる場合は別途緩和 or 自動登録を検討。
+
+## シフトの内容物ルールを「移動先の登録内容物のみ」に修正
+- 前回(PR#12)の「全項目選択可」は緩すぎ（入れてはいけないタンクに別液体を記録できた）。
+- 新ルール: シフトの内容物＝移動先タンクの登録内容物のみ。移動元の登録は問わない（油系は処理中に名前が変わるのを容認）。誤記録を防止。
+- 実装: record-form.tsx availableContents=selectedVessel.contents（全ops統一）、allContents撤去。record/page.tsx itemTypes読込撤去。record-transaction.ts 検証はmainAllowed(移動先)のみ・distributeはdest=true/source=false。
+- Playwright 5/5: 候補は移動先の登録のみ/移動先に無い内容物は出ない/移動元未登録でも成功/残量移動。

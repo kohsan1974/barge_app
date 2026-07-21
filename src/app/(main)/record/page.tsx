@@ -12,7 +12,7 @@ export default async function RecordPage() {
     redirect("/login");
   }
 
-  const [assignments, vessels, sites, trucks, itemTypes] = await Promise.all([
+  const [assignments, vessels, sites, trucks] = await Promise.all([
     prisma.operatorDepartment.findMany({
       where: { userId, isActive: true, department: { isActive: true } },
       include: { department: true },
@@ -42,16 +42,9 @@ export default async function RecordPage() {
       },
     }),
     prisma.truck.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    // シフトは処理中に容態が変化するため、タンク登録に縛られず全内容物から選べるようにする用途
-    prisma.itemType.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, unit: true },
-    }),
   ]);
 
   const departments = assignments.map((a) => a.department);
-  const allContents = itemTypes.map((it) => ({ id: it.id, name: it.name, unit: it.unit }));
   // 現場は複数部署に所属できるため、選択中の部署に応じた絞り込みができるよう部署id一覧を添える。
   // 本船は「選択された現場に登録されている本船のみ」を表示するため、現場ごとの登録本船一覧も添える。
   // types は紐づく部署の種別（運搬/処理）一覧。記録画面では選択中の部署と同じ種別の現場だけに絞り込む
@@ -152,7 +145,6 @@ export default async function RecordPage() {
           sites={siteOptions}
           trucks={truckOptions}
           vessels={vesselOptions}
-          allContents={allContents}
         />
       )}
     </div>
