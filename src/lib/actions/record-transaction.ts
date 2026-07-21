@@ -147,8 +147,13 @@ function distribute(
   members: LockedMember[],
   itemTypeId: string,
   deltaCenti: number,
+  // シフトは容態変化に対応するため、タンクの登録内容物に縛らず全対象タンクへ分配する（false）。
+  // 搬入・放流・出荷は登録内容物のあるタンクのみ対象にする（true）
+  requireRegistered = true,
 ): { allocations: { id: string; deltaCenti: number; nextBalanceCenti: number }[]; shortfall: number } {
-  const eligible = members.filter((m) => m.allowedItemTypeIds.has(itemTypeId));
+  const eligible = requireRegistered
+    ? members.filter((m) => m.allowedItemTypeIds.has(itemTypeId))
+    : members;
   const sign = deltaCenti > 0 ? 1 : -1;
   let remaining = Math.abs(deltaCenti);
   const allocations: { id: string; deltaCenti: number; nextBalanceCenti: number }[] = [];
@@ -336,16 +341,26 @@ export async function recordTransaction(
     }
   }
 
-  // 選択された内容物が、対象タンク群のいずれかに登録されているか確認する（UI外からの不正値も弾く）。
-  // 「総量のみ表示」バージはタンクごとの登録内容物の和集合で判定する
-  const mainAllowed = new Set(mainTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
-  if (itemTypeIds.some((id) => !mainAllowed.has(id))) {
-    return { error: "このタンクに登録されていない内容物が含まれています" };
-  }
-  if (sourceTarget) {
-    const sourceAllowed = new Set(sourceTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
-    if (itemTypeIds.some((id) => !sourceAllowed.has(id))) {
-      return { error: "移動元タンクに登録されていない内容物が含まれています" };
+  // 内容物の検証。シフトは処理中に容態が変化する（ビルジ→廃油・重油系 等）ため、タンク登録に
+  // 縛らず「有効な内容物マスタ」ならすべて許可する。搬入・放流・出荷は従来どおり、対象タンク群の
+  // いずれかに登録されている内容物のみ許可する（「総量のみ表示」バージは配下タンクの和集合で判定）。
+  // いずれもUI外からの不正値を弾く
+  if (operation === "SHIFT") {
+    const activeItemTypeIds = new Set(
+      (
+        await prisma.itemType.findMany({
+          where: { id: { in: itemTypeIds }, isActive: true },
+          select: { id: true },
+        })
+      ).map((r) => r.id),
+    );
+    if (itemTypeIds.some((id) => !activeItemTypeIds.has(id))) {
+      return { error: "選択された内容物が正しくありません" };
+    }
+  } else {
+    const mainAllowed = new Set(mainTarget.members.flatMap((m) => [...m.allowedItemTypeIds]));
+    if (itemTypeIds.some((id) => !mainAllowed.has(id))) {
+      return { error: "このタンクに登録されていない内容物が含まれています" };
     }
   }
 
@@ -384,11 +399,11 @@ export async function recordTransaction(
               throw new Error("シフトの数量は0より大きい値を入力してください");
             }
 
-            const destDist = distribute(destLocked, itemTypeIds[i], quantityCenti);
+            const destDist = distribute(destLocked, itemTypeIds[i], quantityCenti, false);
             if (destDist.shortfall > 0) {
               throw new Error(`移動先タンクの最大容量を超えています（残り ${fromCenti(destDist.shortfall)}kL 分が入りません）`);
             }
-            const sourceDist = distribute(sourceLocked, itemTypeIds[i], -quantityCenti);
+            const sourceDist = distribute(sourceLocked, itemTypeIds[i], -quantityCenti, false);
             if (sourceDist.shortfall > 0) {
               throw new Error(`移動元タンクの残量を超えるシフトはできません（不足 ${fromCenti(sourceDist.shortfall)}kL）`);
             }
