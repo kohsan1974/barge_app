@@ -83,3 +83,8 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 原因: VoidRecordButtonが window.prompt + ネイティブ<form action=サーバーアクション>送信方式。iOSでprompt/フォーム送信が不安定（保存ボタン問題と同クラス）。Chromiumでは通るが実機で無反応。
 - 修正: voidTransactionSlip を (slipId, reason)→結果 に変更（redirect廃止）。VoidRecordButtonを画面内の理由入力欄＋useTransitionでの直接呼び出しに書き換え（prompt・form送信を排除）。history側は bind で渡し、redirect用の?error/?ok処理を削除。
 - Playwright 9/9 OK（新方式で残量巻き戻し・横線・監査・CSV除外）。
+
+## キャリブレーションも取消可能に — 完了
+- void-record.ts: 特別扱いガードを「CORRECTIONのみ禁止」に変更（CALIBRATIONは取消可能に）。残量巻き戻しは既存式 currentBalance -= 数量 で正しく処理（キャリブレーションの数量=調整差分＝残量寄与）。
+- history: canVoid に CALIBRATION を追加。
+- Playwright実測 6/6: キャリブレーション実行→残量が実測値/取消ボタン表示/取消で残量が調整前に復元/削除しました表示/DBに論理削除で残存。通常の取消も9/9で回帰なし。

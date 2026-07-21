@@ -54,11 +54,14 @@ export default async function HistoryPage({
           {transactions.map((t) => {
             const quantity = Number(t.quantity);
             const voided = t.voidedAt !== null;
-            // 取消可能なのは、admin かつ 未取消の通常記録（搬入・処理）で、訂正されていないもの
+            // 取消可能なのは、admin かつ 未取消で、訂正されていない記録（搬入・処理・残量調整）。
+            // 訂正行（CORRECTION）は取消不可
             const canVoid =
               isAdmin &&
               !voided &&
-              (t.transactionType === "RECEIVE" || t.transactionType === "PROCESS") &&
+              (t.transactionType === "RECEIVE" ||
+                t.transactionType === "PROCESS" ||
+                t.transactionType === "CALIBRATION") &&
               t.corrections.length === 0;
             return (
               <li

@@ -42,10 +42,11 @@ export async function voidTransactionSlip(slipId: string, reason: string): Promi
           throw new VoidError("対象の記録が見つかりません（すでに取消済みの可能性があります）");
         }
 
-        // 残量調整・訂正の行、および訂正済みの記録は取消の対象外（会計の二重処理を避ける）
+        // 訂正行（廃止済みの旧機能の履歴）と、訂正済みの記録は取消の対象外（会計の二重処理を避ける）。
+        // 残量調整（CALIBRATION）は取消可能：その調整分（数量＝残量への寄与）を巻き戻す
         for (const r of rows) {
-          if (r.transactionType === "CORRECTION" || r.transactionType === "CALIBRATION") {
-            throw new VoidError("残量調整・訂正の記録は取消できません");
+          if (r.transactionType === "CORRECTION") {
+            throw new VoidError("訂正の記録は取消できません");
           }
           if (r._count.corrections > 0) {
             throw new VoidError("この記録は訂正済みのため取消できません");
