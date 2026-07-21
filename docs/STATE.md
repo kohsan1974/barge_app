@@ -107,3 +107,8 @@ Kit v1.0 complete: authored, adversarially reviewed (13 reviewers, 193 findings)
 - 新ルール: シフトの内容物＝移動先タンクの登録内容物のみ。移動元の登録は問わない（油系は処理中に名前が変わるのを容認）。誤記録を防止。
 - 実装: record-form.tsx availableContents=selectedVessel.contents（全ops統一）、allContents撤去。record/page.tsx itemTypes読込撤去。record-transaction.ts 検証はmainAllowed(移動先)のみ・distributeはdest=true/source=false。
 - Playwright 5/5: 候補は移動先の登録のみ/移動先に無い内容物は出ない/移動元未登録でも成功/残量移動。
+
+## タンク役割ラベル 搬入→搬出（allowSourcing）
+- 受入(allowReceiving)↔搬入(allowSourcing) だと両方「入れる」で紛らわしい。出す側の役割を「搬出」に改称。
+- 変更はVesselDeptRowのラベルのみ（admin-autosave.tsx）。RECEIVE作業の「搬入」（外部→タンク）は別概念で保持。
+- Playwright 4/4: 役割行が受入/搬出・役割「搬入」無し・記録画面のRECEIVE「搬入」は保持。

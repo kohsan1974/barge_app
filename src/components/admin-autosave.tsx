@@ -166,9 +166,10 @@ export function AutoSelect({
   );
 }
 
-// バージ・タンク画面の「所属部署＋受入/搬入」の1部署ぶんの行。
-// 3つのチェックボックス（所属・受入・搬入）はどれを変えても一緒に保存する。
-// 所属をオフにすると受入/搬入は無効表示にする（リンクが無ければ役割は意味を持たないため）
+// バージ・タンク画面の「所属部署＋受入/搬出」の1部署ぶんの行。
+// 3つのチェックボックス（所属・受入・搬出）はどれを変えても一緒に保存する。
+// 所属をオフにすると受入/搬出は無効表示にする（リンクが無ければ役割は意味を持たないため）。
+// 受入=このタンクに入れられる（allowReceiving）、搬出=このタンクから出せる（allowSourcing＝シフト元・放流・出荷の対象）
 export function VesselDeptRow({
   deptName,
   initialLinked,
@@ -224,7 +225,7 @@ export function VesselDeptRow({
           disabled={!linked}
           onChange={(e) => save(linked, receiving, e.target.checked)}
         />
-        搬入
+        搬出
       </label>
       <StatusMark status={status} error={error} />
     </span>
