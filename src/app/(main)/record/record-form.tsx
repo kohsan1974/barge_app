@@ -41,14 +41,11 @@ export function RecordForm({
   sites,
   trucks,
   vessels,
-  allContents,
 }: {
   departments: Department[];
   sites: Site[];
   trucks: Truck[];
   vessels: VesselOption[];
-  // シフト用: タンク登録に縛られず選べる全内容物（容態変化に対応）
-  allContents: Content[];
 }) {
   const router = useRouter();
 
@@ -116,12 +113,10 @@ export function RecordForm({
     : "";
 
   const selectedVessel = vesselCandidates.find((v) => v.id === vesselId);
-  // シフトは処理中に容態が変化する（ビルジ→廃油・重油系 等）ため、タンク登録に縛らず全内容物から選べる。
-  // 搬入・放流・出荷は従来どおり、選択タンクに登録された内容物のみに絞る
-  const availableContents = useMemo(() => {
-    if (isShiftOp) return allContents;
-    return selectedVessel?.contents ?? [];
-  }, [selectedVessel, isShiftOp, allContents]);
+  // 選べる内容物は「対象タンク（シフト・搬入は移動先／受入れタンク、放流・出荷は出す側タンク）」に
+  // 登録された内容物のみ（＝selectedVessel）。これで本来入れてはいけない液体の誤記録を防ぐ。
+  // シフトの移動元は登録を問わない（油系は処理中に名前が変わるため。サーバー側でも移動元は登録不問）
+  const availableContents = useMemo(() => selectedVessel?.contents ?? [], [selectedVessel]);
 
   const [items, setItems] = useState<{ itemTypeId: string; quantity: string }[]>([
     { itemTypeId: vesselCandidates[0]?.contents[0]?.id ?? "", quantity: "" },
@@ -434,7 +429,7 @@ export function RecordForm({
         {noContents ? (
           <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
             {isShiftOp
-              ? "選択できる内容物がありません（内容物マスタが空です）。管理者にタンクマスタでの内容物登録を依頼してください。"
+              ? "移動先タンクに内容物が登録されていません。移動先タンクに、シフトで入れてよい内容物を管理者がタンクマスタで登録してください。"
               : "このタンクには内容物が登録されていません。管理者にタンクマスタでの内容物登録を依頼してください"}
           </p>
         ) : (
