@@ -432,7 +432,9 @@ export function RecordForm({
         <FieldLabel className="mb-2">内容物・数量</FieldLabel>
         {noContents ? (
           <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            このタンクには内容物が登録されていません。管理者にタンクマスタでの内容物登録を依頼してください
+            {isShiftOp
+              ? "移動元と移動先の両方に共通して登録された内容物がありません（シフトできるのは両方のタンクに登録された同じ内容物だけです）。移動する内容物を、移動先タンクにも管理者がタンクマスタで登録すると選べるようになります。"
+              : "このタンクには内容物が登録されていません。管理者にタンクマスタでの内容物登録を依頼してください"}
           </p>
         ) : (
           <>
